@@ -1,0 +1,38 @@
+{
+  "name": "miniapp-backend",
+  "version": "1.0.0",
+  "description": "Backend for Telegram Mini App Game",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "setup-db": "node setup-db.js",
+    "schema-db": "echo \"Running schema.sql directly with psql. Make sure PGPASSWORD is set in your environment.\" && psql -U $DB_USER -h $DB_HOST -d $DB_NAME -f schema.sql"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.2",
+    "axios": "^1.11.0",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.10.0",
+    "telegram": "^2.18.37",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
