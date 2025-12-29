@@ -12,34 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { formatDate, formatCurrency } from '@/lib/utils'
-import { getAffiliateTaskAttempts, reviewAffiliateTaskAttempt, ReviewData } from '@/lib/api'
-
-// Interface for the actual API response structure
-interface TaskAttempt {
-  id: number
-  user_id: string
-  task_id: number
-  status: 'pending' | 'approved' | 'completed' | 'rejected'
-  proof_url: string | null
-  proof_text: string | null
-  ip_address: string | null
-  device_id: string | null
-  conversion_id: string | null
-  admin_notes: string | null
-  points_awarded: number
-  cash_awarded: string
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-  reviewed_by: number | null
-  username: string | null
-  first_name: string
-  last_name: string
-  photo_url: string
-  task_title: string
-  reward_amount: string
-  reward_type: 'points' | 'cash'
-}
+import { getAffiliateTaskAttempts, reviewAffiliateTaskAttempt, ReviewData, type TaskAttempt } from '@/lib/api'
 
 export default function AffiliateTaskAttemptsPage() {
   const [attempts, setAttempts] = useState<TaskAttempt[]>([])
@@ -264,7 +237,10 @@ export default function AffiliateTaskAttemptsPage() {
                                               <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() => window.open(attempt.proof_url, '_blank')}
+                                                onClick={() => {
+                                                  if (!attempt.proof_url) return
+                                                  window.open(attempt.proof_url, '_blank')
+                                                }}
                                               >
                                                 <ExternalLink className="w-3 h-3 mr-1" />
                                                 Open in New Tab
@@ -274,7 +250,10 @@ export default function AffiliateTaskAttemptsPage() {
                                               <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() => window.open(attempt.proof_url, '_blank')}
+                                                onClick={() => {
+                                                  if (!attempt.proof_url) return
+                                                  window.open(attempt.proof_url, '_blank')
+                                                }}
                                               >
                                                 <ExternalLink className="w-3 h-3 mr-1" />
                                                 Open Full Size
@@ -286,7 +265,10 @@ export default function AffiliateTaskAttemptsPage() {
                                             <Button
                                               variant="outline"
                                               size="sm"
-                                              onClick={() => window.open(attempt.proof_url, '_blank')}
+                                              onClick={() => {
+                                                if (!attempt.proof_url) return
+                                                window.open(attempt.proof_url, '_blank')
+                                              }}
                                             >
                                               <ExternalLink className="w-3 h-3 mr-1" />
                                               View File

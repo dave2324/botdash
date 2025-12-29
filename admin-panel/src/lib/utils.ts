@@ -16,10 +16,16 @@ export function formatDate(date: string | Date): string {
   });
 }
 
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number | string | null | undefined): string {
+  const numeric = typeof amount === 'number'
+    ? amount
+    : typeof amount === 'string'
+      ? Number(amount)
+      : 0;
+
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2
-  }).format(amount);
+  }).format(Number.isFinite(numeric) ? numeric : 0);
 }

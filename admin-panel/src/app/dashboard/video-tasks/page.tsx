@@ -446,7 +446,14 @@ export default function YoutubeTasksPage() {
   const addNewEditQuestion = () => {
     setEditQuestions([
       ...editQuestions,
-      { question: '', correctAnswer: '', wrongAnswers: ['', ''] }
+      {
+        question: '',
+        correctAnswer: '',
+        wrongAnswers: ['', ''],
+        question_type: 'multiple_choice',
+        max_attempts: 3,
+        cooldown_seconds: 300
+      }
     ]);
   };
 
@@ -1114,12 +1121,18 @@ export default function YoutubeTasksPage() {
                       question={q.question}
                       correctAnswer={q.correctAnswer}
                       wrongAnswers={q.wrongAnswers}
+                      questionType={q.question_type}
+                      maxAttempts={q.max_attempts}
+                      cooldownSeconds={q.cooldown_seconds}
                       onQuestionChange={(value) => handleEditQuestionChange(index, 'question', value)}
                       onCorrectAnswerChange={(value) => handleEditQuestionChange(index, 'correctAnswer', value)}
                       onWrongAnswerChange={(answerIndex, value) => handleEditWrongAnswerChange(index, answerIndex, value)}
                       onAddWrongAnswer={() => addEditWrongAnswerField(index)}
                       onRemoveWrongAnswer={(answerIndex) => removeEditWrongAnswerField(index, answerIndex)}
                       onRemoveQuestion={() => removeEditQuestion(index)}
+                      onQuestionTypeChange={(value) => handleEditQuestionChange(index, 'question_type', value)}
+                      onMaxAttemptsChange={(value) => handleEditQuestionChange(index, 'max_attempts', value)}
+                      onCooldownSecondsChange={(value) => handleEditQuestionChange(index, 'cooldown_seconds', value)}
                       isRemovable={editQuestions.length > 1}
                     />
                   ))}

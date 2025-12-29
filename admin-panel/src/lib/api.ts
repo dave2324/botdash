@@ -316,6 +316,7 @@ export interface YoutubeTask {
   video_duration: number | null;
   question_count?: number;
   completion_count?: number;
+  completion_limit?: number | null;
   require_finish_task_id?: number | null;
   require_finish_task_type?: string | null;
   require_premium?: boolean;
@@ -1081,17 +1082,33 @@ export interface Course {
   title: string;
   description: string;
   category: string;
-  type: 'free' | 'premium' | 'pay_to_access';
-  price: number | null;
+
+  // Backend may provide either a consolidated `type` or flags.
+  type?: 'free' | 'premium' | 'pay_to_access';
+  is_free?: boolean;
+  require_premium?: boolean;
+
+  // Backend sometimes serializes numbers as strings
+  price?: number | string | null;
+
   thumbnail_url: string | null;
   duration_hours: number | null;
   difficulty_level: 'beginner' | 'intermediate' | 'advanced';
-  points_reward: number;
-  certificate_enabled: boolean;
-  status: 'active' | 'inactive' | 'draft';
+
+  points_reward?: number;
+  certificate_enabled?: boolean;
+  certification_required?: boolean;
+
+  status?: 'active' | 'inactive' | 'draft';
+  is_active?: boolean;
+
   created_at: string;
-  lessons_count: number;
-  enrollments_count: number;
+
+  // Count fields (some endpoints use different names)
+  lessons_count?: number;
+  lesson_count?: number;
+  enrollments_count?: number;
+  enrolled_count?: number;
 }
 
 export interface CourseStats {
@@ -1101,13 +1118,24 @@ export interface CourseStats {
   totalRevenue: number;
 }
 
+// The backend currently returns a nested stats payload (strings).
+export interface CourseStatsResponse {
+  courses: {
+    total_courses: string;
+    active_courses: string;
+  };
+  enrollments: {
+    total_enrollments: string;
+  };
+}
+
 export const getCourses = async (): Promise<{ courses: Course[] }> => {
   const response = await fetchWithAuth('/admin/courses');
   if (!response.ok) throw new Error('Failed to fetch courses');
   return await response.json();
 };
 
-export const getCourseStats = async (): Promise<{ stats: CourseStats }> => {
+export const getCourseStats = async (): Promise<CourseStatsResponse> => {
   const response = await fetchWithAuth('/admin/courses/stats');
   if (!response.ok) throw new Error('Failed to fetch course stats');
   return await response.json();
@@ -1225,28 +1253,47 @@ export const updateAffiliateTaskStatus = async (id: number, status: string): Pro
 };
 
 // Task Attempt Management
+// NOTE: This type reflects the (flat) payload returned by `/admin/affiliate-tasks/attempts` as used in the admin UI.
+// Some fields are optional because the backend may omit them depending on query/join.
 export interface TaskAttempt {
   id: number;
+  user_id: string;
   task_id: number;
-  user_id: number;
-  status: 'pending' | 'approved' | 'rejected';
-  proof_text: string;
-  proof_files: string[];
-  submitted_at: string;
-  reviewed_at: string | null;
-  reviewed_by: number | null;
-  admin_notes: string | null;
-  reward_amount: number;
-  task: {
-    title: string;
-    type: string;
-    target_link: string;
-  };
-  user: {
-    username: string;
-    telegram_id: string;
-  };
+  status: 'pending' | 'approved' | 'completed' | 'rejected';
+
+  // Proof
+  proof_url?: string | null;
+  proof_text?: string | null;
+  proof_files?: string[]; // kept for backwards compatibility if backend returns an array
+
+  // Metadata
+  ip_address?: string | null;
+  device_id?: string | null;
+  conversion_id?: string | null;
+
+  // Review
+  admin_notes?: string | null;
+  reviewed_by?: number | null;
+
+  // Rewards
+  points_awarded?: number;
+  cash_awarded?: number | string;
+
+  // Timestamps
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+
+  // Joined/user/task display fields
+  username?: string | null;
+  first_name?: string;
+  last_name?: string;
+  photo_url?: string;
+  task_title?: string;
+  reward_amount?: number | string;
+  reward_type?: 'points' | 'cash';
 }
+
 
 export interface ReviewData {
   status: 'approved' | 'rejected';

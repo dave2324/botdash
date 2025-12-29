@@ -29,20 +29,24 @@ interface LessonFormData {
   title: string
   description: string
   content: string
+  content_url?: string
   lesson_type: 'text' | 'video' | 'document' | 'interactive'
   order_index: number
   duration_minutes: number | null
   is_free_preview: boolean
+  is_required?: boolean | string
 }
 
 const initialFormData: LessonFormData = {
   title: '',
   description: '',
   content: '',
+  content_url: '',
   lesson_type: 'text',
   order_index: 1,
   duration_minutes: null,
-  is_free_preview: false
+  is_free_preview: false,
+  is_required: false
 }
 
 export default function LessonsPage() {
@@ -109,8 +113,8 @@ export default function LessonsPage() {
         content_type: formData.lesson_type, // Map lesson_type to content_type
         content_text: formData.content, // Map content to content_text
         content_url: formData.content_url,
-        order_index: parseInt(formData.order_index) || 1,
-        duration_minutes: parseInt(formData.duration_minutes) || 0,
+        order_index: Number(formData.order_index) || 1,
+        duration_minutes: formData.duration_minutes ? Number(formData.duration_minutes) : 0,
         is_required: formData.is_required === 'true' || formData.is_required === true
       }
 

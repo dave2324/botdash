@@ -172,7 +172,7 @@ export default function CoursesPage() {
     const getCourseType = (course: Course) => {
       if (course.is_free) return 'free'
       if (course.require_premium) return 'premium'
-      if (course.price && parseFloat(course.price) > 0) return 'pay_to_access'
+      if (course.price != null && parseFloat(String(course.price)) > 0) return 'pay_to_access'
       return 'free'
     }
 
@@ -181,11 +181,11 @@ export default function CoursesPage() {
       description: course.description,
       category: course.category,
       type: getCourseType(course),
-      price: course.price ? parseFloat(course.price) : null,
+      price: course.price != null ? parseFloat(String(course.price)) : null,
       duration_hours: course.duration_hours,
       difficulty_level: course.difficulty_level,
       points_reward: 0, // Not in API response
-      certificate_enabled: course.certification_required,
+      certificate_enabled: !!course.certification_required,
       status: course.is_active ? 'active' : 'inactive',
       thumbnail_url: course.thumbnail_url
     })
@@ -379,8 +379,8 @@ export default function CoursesPage() {
                       {getTypeBadge(
                         course.is_free ? 'free' :
                         course.require_premium ? 'premium' :
-                        (course.price && parseFloat(course.price) > 0) ? 'pay_to_access' : 'free',
-                        course.price ? parseFloat(course.price) : null
+                        (course.price != null && parseFloat(String(course.price)) > 0) ? 'pay_to_access' : 'free',
+                        course.price != null ? parseFloat(String(course.price)) : null
                       )}
                     </TableCell>
                     <TableCell>
