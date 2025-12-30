@@ -165,13 +165,15 @@ app.get('/theme', (req, res) => {
 // Add payments routes BEFORE authentication middleware (webhooks don't have Telegram auth)
 app.use('/api/payments', require('./api/payments'));
 
-// Protected routes using Telegram authentication (skip payments which handles its own auth)
+// Protected routes using Telegram authentication (skip payments which handle their own auth)
+// NOTE: We use the wrapper middleware so missing BOT_TOKEN doesn't crash the server.
+const telegramAuth = require('./middleware/auth');
 app.use('/api', (req, res, next) => {
   // Skip global auth for payments routes - they handle their own auth internally
   if (req.originalUrl.startsWith('/api/payments')) {
     return next();
   }
-  return validateTelegramWebAppData(process.env.BOT_TOKEN)(req, res, next);
+  return telegramAuth(req, res, next);
 });
 
 // Add this line to use the new referrals router

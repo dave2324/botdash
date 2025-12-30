@@ -6,6 +6,8 @@ const axios = require('axios');
 const { validateTelegramWebAppData } = require('../middleware/optimized-auth');
 
 // Apply authentication middleware
+// NOTE: If BOT_TOKEN isn't set, this will return 401 ("Missing authentication data").
+// For local/dev, set DISABLE_TELEGRAM_AUTH=true to bypass auth in index.js where routes are mounted.
 router.use(validateTelegramWebAppData(process.env.BOT_TOKEN));
 
 // GET /api/withdrawals/settings

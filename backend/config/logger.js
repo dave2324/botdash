@@ -106,7 +106,12 @@ const logger = winston.createLogger({
       maxSize: '100m',
       format: fileFormat
     })
-  ]
+  ],
+
+  // Prevent winston from force-exiting the process on exceptions.
+  // In production you may want this behavior (crash & restart), but in local/dev
+  // it prevents the API from booting when optional env vars/integrations are missing.
+  exitOnError: String(process.env.LOGGER_EXIT_ON_ERROR || (process.env.NODE_ENV === 'production')).toLowerCase() === 'true'
 });
 
 // Add console transport for development

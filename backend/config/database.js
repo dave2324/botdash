@@ -47,10 +47,19 @@ pool.on('error', (err) => {
     return;
   }
 
-  // Only exit on severe errors
+  // Only exit on severe errors if explicitly enabled.
+  // For local/dev environments you often want the API server to boot even if DB is down.
+  const exitOnFatal = String(process.env.EXIT_ON_DB_FATAL || 'false').toLowerCase() === 'true';
   if (err.severity === 'FATAL' || err.severity === 'PANIC') {
-    console.error('Fatal database error, shutting down...');
-    process.exit(-1);
+    console.error('Fatal database error detected', {
+      severity: err.severity,
+      exitOnFatal
+    });
+    if (exitOnFatal) {
+      console.error('EXIT_ON_DB_FATAL=true -> shutting down...');
+      process.exit(-1);
+    }
+    return;
   }
 });
 

@@ -15,7 +15,9 @@ router.use((req, res, next) => {
     return next();
   }
   console.log('Applying auth for path:', req.path, 'method:', req.method);
-  // Apply Telegram authentication for other endpoints
+  // Apply Telegram authentication for other endpoints.
+  // If BOT_TOKEN isn't set, the middleware will respond 401 (Missing authentication data).
+  // For local/dev, set DISABLE_TELEGRAM_AUTH=true and/or provide BOT_TOKEN.
   return validateTelegramWebAppData(process.env.BOT_TOKEN)(req, res, next);
 });
 
