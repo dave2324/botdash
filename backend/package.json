@@ -10,6 +10,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "setup-db": "node setup-db.js",
+    "migrate": "node migrate.js",
+    "migrate:all": "RUN_SCHEMA=true node migrate.js",
     "schema-db": "echo \"Running schema.sql directly with psql. Make sure PGPASSWORD is set in your environment.\" && psql -U $DB_USER -h $DB_HOST -d $DB_NAME -f schema.sql"
   },
   "dependencies": {
