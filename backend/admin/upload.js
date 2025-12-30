@@ -7,24 +7,34 @@ const crypto = require('crypto');
 
 const router = express.Router();
 
-// Initialize Supabase client with service role key for admin operations
+// Initialize Supabase client (optional)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+let supabase = null;
 if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Missing Supabase environment variables:', {
+  console.warn('Supabase is not configured. Admin upload endpoints will be disabled until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.', {
     hasUrl: !!supabaseUrl,
     hasServiceKey: !!supabaseServiceKey
   });
-  throw new Error('Missing Supabase environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
+} else {
+  supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-});
+function ensureSupabaseConfigured(res) {
+  if (supabase) return true;
+
+  res.status(503).json({
+    message: 'File uploads are not configured on this server.',
+    requiredEnv: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
+  });
+  return false;
+}
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -59,6 +69,8 @@ const upload = multer({
 
 // Upload file to Supabase Storage (Admin version)
 router.post('/', adminAuth, upload.single('file'), async (req, res) => {
+  if (!ensureSupabaseConfigured(res)) return;
+
   try {
     const adminId = req.admin?.id || 'admin';
 
@@ -150,6 +162,8 @@ router.post('/', adminAuth, upload.single('file'), async (req, res) => {
 
 // Delete uploaded file (admin version)
 router.delete('/:fileName', adminAuth, async (req, res) => {
+  if (!ensureSupabaseConfigured(res)) return;
+
   try {
     const { fileName } = req.params;
 

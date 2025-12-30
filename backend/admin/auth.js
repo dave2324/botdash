@@ -1,15 +1,8 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 
-// Import activity logger
-let logAdminActivity;
-try {
-  // Handle circular dependency by importing lazily
-  logAdminActivity = require('./activity-logs').logAdminActivity;
-} catch (err) {
-  // If activity-logs module is not available yet, use a dummy function that returns a resolved promise
-  logAdminActivity = () => Promise.resolve();
-}
+// Import activity logger (standalone module to avoid circular dependencies)
+const { logAdminActivity } = require('./activity-log-service');
 
 /**
  * Base admin authentication middleware - verifies JWT token

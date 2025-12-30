@@ -1,12 +1,19 @@
 const { Pool } = require('pg');
 
 // Create a single pool instance to be shared across the application
-const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT || 5432,
+const connectionString = process.env.DATABASE_URL;
+
+const pool = connectionString
+  ? new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false }
+    })
+  : new Pool({
+      user: process.env.DB_USER,
+      host: process.env.DB_HOST,
+      database: process.env.DB_NAME,
+      password: process.env.DB_PASSWORD,
+      port: process.env.DB_PORT || 5432,
   // Optimized connection pool configuration for Supabase
   max: 10, // Max connections for remote DB
   min: 1, // Keep minimum connections alive
@@ -21,7 +28,7 @@ const pool = new Pool({
   // Additional settings for stability
   statement_timeout: 30000, // 30 second query timeout
   query_timeout: 30000, // 30 second query timeout
-  ssl: { rejectUnauthorized: false } // Required for Supabase connections
+  ssl: { rejectUnauthorized: false } // Required for Supabase/Railway Postgres connections
 });
 
 // Handle pool errors with better logging and recovery

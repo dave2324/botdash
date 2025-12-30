@@ -16,6 +16,9 @@ logger.info('Starting MiniApp Backend Server', {
   timestamp: new Date().toISOString()
 });
 
+// Optional: run database migrations on startup (use with care in production)
+const { applyMigrations } = require('./migrations');
+
 // Import admin routes
 const adminRoutes = require('./admin/routes');
 const promotionStatsRoutes = require('./admin/promotion-stats');
@@ -399,42 +402,65 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 
 (async () => {
-  try {
-    const bot = await createBot();
+  let bot = null;
 
-    // Start the bot in a worker thread
-    await bot.start();
+  // Optionally apply SQL migrations before the app starts serving requests.
+  // Recommended approach on Railway:
+  // - Temporarily set RUN_MIGRATIONS=true
+  // - Deploy once and watch logs until migrations complete
+  // - Then set RUN_MIGRATIONS=false (or remove)
+  if (String(process.env.RUN_MIGRATIONS).toLowerCase() === 'true') {
+    logger.warn('RUN_MIGRATIONS=true: applying pending SQL migrations');
+    await applyMigrations();
+  }
+
+  // Start the server first so deployments don't crash just because optional integrations
+  // (like the Telegram bot token) are not configured.
+  app.listen(PORT, () => {
+    logger.info('Server started successfully', {
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  try {
+    bot = await createBot();
+
+    // Some implementations may already start the bot inside createBot().
+    // Calling start() again should be safe, but wrap just in case.
+    if (bot && typeof bot.start === 'function') {
+      await bot.start();
+    }
+
     logger.info('Telegram bot started successfully', {
       botToken: process.env.BOT_TOKEN ? '[REDACTED]' : 'NOT_SET',
       apiId: process.env.API_ID ? '[REDACTED]' : 'NOT_SET'
     });
-
-    // Start the server
-    app.listen(PORT, () => {
-      logger.info('Server started successfully', {
-        port: PORT,
-        environment: process.env.NODE_ENV || 'development',
-        timestamp: new Date().toISOString()
-      });
-    });
-
-    // Handle graceful shutdown
-    process.on('SIGTERM', async () => {
-      logger.info('SIGTERM received. Shutting down gracefully...');
-      await bot.stop();
-      process.exit(0);
-    });
-
-    process.on('SIGINT', async () => {
-      logger.info('SIGINT received. Shutting down gracefully...');
-      await bot.stop();
-      process.exit(0);
-    });
   } catch (error) {
-    logger.error('Failed to start server or bot', {
+    // Do NOT crash the whole server if the bot cannot start.
+    logger.error('Telegram bot failed to start (server will continue without bot)', {
       error: error.message,
       stack: error.stack
     });
-    process.exit(1);
   }
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received. Shutting down gracefully...');
+    try {
+      if (bot && typeof bot.stop === 'function') await bot.stop();
+    } finally {
+      process.exit(0);
+    }
+  });
+
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received. Shutting down gracefully...');
+    try {
+      if (bot && typeof bot.stop === 'function') await bot.stop();
+    } finally {
+      process.exit(0);
+    }
+  });
 })();

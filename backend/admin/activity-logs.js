@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
 const { adminAuth, checkPermission, superadminOnly } = require('./auth');
+const { logAdminActivity } = require('./activity-log-service');
 
 // Get admin activity logs with filtering and pagination
 router.get('/activity-logs', adminAuth, checkPermission('view_activity_logs'), async (req, res) => {
@@ -165,32 +166,6 @@ router.get('/activity-logs/:id', adminAuth, checkPermission('view_activity_logs'
     res.status(500).json({ message: 'Server error' });
   }
 });
-
-// Create a utility function for logging admin activities
-// This can be imported and used in other parts of the admin API
-const logAdminActivity = async (adminUserId, action, targetType, targetId, details, ipAddress) => {
-  try {
-    const result = await pool.query(`
-      INSERT INTO admin_activity_logs
-        (admin_user_id, action, target_type, target_id, details, ip_address)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
-    `, [
-      adminUserId, 
-      action, 
-      targetType, 
-      targetId, 
-      details, 
-      ipAddress
-    ]);
-    
-    return result.rows[0].id;
-  } catch (error) {
-    console.error('Error logging admin activity:', error);
-    // Don't throw error, just log it to avoid disrupting the main flow
-    return null;
-  }
-};
 
 module.exports = {
   router,
