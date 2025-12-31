@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+
 const { adminAuth, checkPermission, superadminOnly, logAdminLogout } = require('./auth');
 const { activityLogger } = require('./middleware/activity-logger');
 const pool = require('../config/database');
@@ -67,13 +68,12 @@ const sendBotNotification = async (userId, message) => {
   }
 };
 
-// Check for required environment variables
-if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD_HASH || !process.env.ADMIN_JWT_SECRET) {
-  console.error('ERROR: Missing required environment variables for admin authentication:');
-  if (!process.env.ADMIN_USERNAME) console.error('- ADMIN_USERNAME not set');
-  if (!process.env.ADMIN_PASSWORD_HASH) console.error('- ADMIN_PASSWORD_HASH not set');
-  if (!process.env.ADMIN_JWT_SECRET) console.error('- ADMIN_JWT_SECRET not set');
-}
+// Hardcoded admin credentials for development/demo use
+// NOTE: Do NOT use this in production. Replace with proper env/DB based auth.
+const HARDCODED_ADMIN = {
+  username: 'superadmin',
+  password: '!FDC=xy1@0XDaTw'
+};
 
 const router = express.Router();
 
@@ -150,103 +150,43 @@ router.post('/broadcast', adminAuth, async (req, res) => {
   }
 });
 
-// Admin login endpoint
+// Admin login endpoint (hardcoded credentials for now)
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    
-    // First try database authentication
-    const userResult = await pool.query(`
-      SELECT 
-        a.id, a.username, a.password_hash, a.is_active, 
-        r.id as role_id, r.name as role_name
-      FROM admin_users a
-      JOIN admin_roles r ON a.role_id = r.id
-      WHERE a.username = $1
-    `, [username]);
-    
-    let isValidUser = false;
-    let userData = null;
-    
-    if (userResult.rows.length > 0) {
-      // Check if account is active
-      if (!userResult.rows[0].is_active) {
-        return res.status(403).json({ message: 'Account is inactive. Contact an administrator.' });
-      }
-      
-      // Validate password against database
-      isValidUser = await bcrypt.compare(password, userResult.rows[0].password_hash);
-      if (isValidUser) {
-        userData = userResult.rows[0];
-      }
-    } 
-    
-    // If database auth failed, try legacy authentication with env variables
-    if (!isValidUser && process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH) {
-      isValidUser = username === process.env.ADMIN_USERNAME && 
-                   await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
-      if (isValidUser) {
-        userData = {
-          id: 0,  // Special ID for legacy admin
-          username: process.env.ADMIN_USERNAME,
-          role_name: 'superadmin',
-          is_legacy: true
-        };
-      }
-    }
-    
-    // Return error if authentication failed
-    if (!isValidUser) {
+
+    // Simple hardcoded check
+    if (username !== HARDCODED_ADMIN.username || password !== HARDCODED_ADMIN.password) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    
+
+    const userData = {
+      id: 0,
+      username: HARDCODED_ADMIN.username,
+      role_name: 'superadmin',
+      is_legacy: true
+    };
+
+    // Use env secret if provided, otherwise fall back to a dev-only default
+    const jwtSecret = process.env.ADMIN_JWT_SECRET || 'dev-admin-secret';
+
     // Generate JWT token with user info
     const token = jwt.sign(
-      { 
+      {
         username: userData.username,
         role: userData.role_name,
         is_legacy: !!userData.is_legacy
       },
-      process.env.ADMIN_JWT_SECRET,
+      jwtSecret,
       { expiresIn: '24h' }
     );
-    
-    // If not a legacy user, update last login time
-    if (!userData.is_legacy) {
-      await pool.query(`
-        UPDATE admin_users 
-        SET last_login = NOW() 
-        WHERE id = $1
-      `, [userData.id]);
-    }
-    
-    // Log the login activity for database users
-    if (!userData.is_legacy) {
-      try {
-        await pool.query(`
-          INSERT INTO admin_activity_logs
-            (admin_user_id, action, target_type, target_id, details, ip_address)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [
-          userData.id, 
-          'login', 
-          'system', 
-          null, 
-          {}, 
-          req.headers['x-forwarded-for'] || req.connection.remoteAddress
-        ]);
-      } catch (logError) {
-        console.error('Error logging admin login:', logError);
-        // Don't block login if logging fails
-      }
-    }
-    
-    res.json({ 
-      token, 
+
+    res.json({
+      token,
       username: userData.username,
       role: userData.role_name,
       role_id: userData.role_id,
-      is_superadmin: userData.role_name === 'superadmin',
+      is_superadmin: true,
       isLegacy: !!userData.is_legacy
     });
   } catch (error) {
