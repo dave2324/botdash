@@ -3,10 +3,14 @@ const { Pool } = require('pg');
 // Create a single pool instance to be shared across the application
 const connectionString = process.env.DATABASE_URL;
 
+// SSL is required for many hosted providers (Supabase/Railway), but local Postgres often has SSL disabled.
+// Control this with DB_SSL=true/false.
+const useSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
+
 const pool = connectionString
   ? new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: false }
+      ssl: useSsl ? { rejectUnauthorized: false } : false
     })
   : new Pool({
       user: process.env.DB_USER,
@@ -28,7 +32,7 @@ const pool = connectionString
   // Additional settings for stability
   statement_timeout: 30000, // 30 second query timeout
   query_timeout: 30000, // 30 second query timeout
-  ssl: { rejectUnauthorized: false } // Required for Supabase/Railway Postgres connections
+  ssl: useSsl ? { rejectUnauthorized: false } : false // Enable only when DB_SSL=true
 });
 
 // Handle pool errors with better logging and recovery

@@ -5,11 +5,13 @@ const path = require('path');
 const { Pool } = require('pg');
 const { logger } = require('./config/logger');
 
-// Database connection
+// Database connection (SSL optional, controlled by DB_SSL like config/database.js)
+const useSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
+
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
+      ssl: useSsl ? { rejectUnauthorized: false } : false
     })
   : new Pool({
       host: process.env.DB_HOST || 'localhost',
@@ -17,7 +19,7 @@ const pool = process.env.DATABASE_URL
       database: process.env.DB_NAME,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      ssl: { rejectUnauthorized: false }
+      ssl: useSsl ? { rejectUnauthorized: false } : false
     });
 
 // Create migrations table if it doesn't exist
@@ -30,7 +32,7 @@ async function ensureMigrationsTable() {
         applied_at TIMESTAMP DEFAULT NOW()
       );
     `);
-    logger.log('Migrations table check complete');
+    logger.info('Migrations table check complete');
   } catch (error) {
     logger.error('Error ensuring migrations table exists:', error);
     throw error;
@@ -52,7 +54,7 @@ async function recordMigration(migrationName) {
     'INSERT INTO db_migrations (migration_name) VALUES ($1)',
     [migrationName]
   );
-  logger.log(`Recorded migration: ${migrationName}`);
+  logger.info(`Recorded migration: ${migrationName}`);
 }
 
 // Apply a migration file
@@ -61,11 +63,11 @@ async function applyMigration(migrationFile) {
   
   // Skip if already applied
   if (await isMigrationApplied(migrationName)) {
-    logger.log(`Migration already applied: ${migrationName}`);
+    logger.info(`Migration already applied: ${migrationName}`);
     return false;
   }
   
-  logger.log(`Applying migration: ${migrationName}`);
+  logger.info(`Applying migration: ${migrationName}`);
   const client = await pool.connect();
   
   try {
@@ -79,7 +81,7 @@ async function applyMigration(migrationFile) {
     );
     await client.query('COMMIT');
     
-    logger.log(`Successfully applied migration: ${migrationName}`);
+    logger.info(`Successfully applied migration: ${migrationName}`);
     return true;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -110,9 +112,9 @@ async function applyMigrations() {
     }
     
     if (appliedCount > 0) {
-      logger.log(`Applied ${appliedCount} migrations`);
+      logger.info(`Applied ${appliedCount} migrations`);
     } else {
-      logger.log('No new migrations to apply');
+      logger.info('No new migrations to apply');
     }
   } catch (error) {
     logger.error('Error applying migrations:', error);

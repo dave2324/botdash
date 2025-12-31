@@ -1,6 +1,16 @@
 -- Migration: Change settings.value column from INTEGER to TEXT
 -- This allows storing both numeric and string settings values
 
+-- Ensure settings table exists (some older databases may not have it)
+CREATE TABLE IF NOT EXISTS settings (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(100) UNIQUE NOT NULL,
+  value TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Step 1: Update the column type
 ALTER TABLE settings ALTER COLUMN value TYPE TEXT USING value::TEXT;
 

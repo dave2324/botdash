@@ -1,9 +1,12 @@
--- Drop tables if they exist (in reverse order to respect foreign key constraints)
-DROP TABLE IF EXISTS spins;
-DROP TABLE IF EXISTS user_tasks;
-DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS referrals;
-DROP TABLE IF EXISTS telegram_users;
+-- Cleanup (allows re-running schema.sql). WARNING: this is destructive.
+-- Drop dependent views/functions first, then tables.
+DROP VIEW IF EXISTS user_statistics CASCADE;
+
+DROP TABLE IF EXISTS spins CASCADE;
+DROP TABLE IF EXISTS user_tasks CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
+DROP TABLE IF EXISTS referrals CASCADE;
+DROP TABLE IF EXISTS telegram_users CASCADE;
 
 -- Create users table
 CREATE TABLE telegram_users (
@@ -23,9 +26,9 @@ CREATE TABLE telegram_users (
 );
 
 -- Create index for username lookups
-CREATE INDEX idx_telegram_users_username ON telegram_users(username);
+CREATE INDEX IF NOT EXISTS idx_telegram_users_username ON telegram_users(username);
 -- Create index for referral code lookups
-CREATE INDEX idx_telegram_users_referral_code ON telegram_users(referral_code);
+CREATE INDEX IF NOT EXISTS idx_telegram_users_referral_code ON telegram_users(referral_code);
 
 -- Create referrals table
 CREATE TABLE referrals (
@@ -38,8 +41,8 @@ CREATE TABLE referrals (
 );
 
 -- Create index for referral lookups
-CREATE INDEX idx_referrals_referrer_id ON referrals(referrer_id);
-CREATE INDEX idx_referrals_referred_id ON referrals(referred_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_referrer_id ON referrals(referrer_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_referred_id ON referrals(referred_id);
 
 -- Create tasks table
 CREATE TABLE tasks (
@@ -52,8 +55,8 @@ CREATE TABLE tasks (
 );
 
 -- Create index for task type lookups
-CREATE INDEX idx_tasks_type ON tasks(type);
-CREATE INDEX idx_tasks_is_active ON tasks(is_active);
+CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(type);
+CREATE INDEX IF NOT EXISTS idx_tasks_is_active ON tasks(is_active);
 
 -- Create user_tasks table (completed tasks)
 CREATE TABLE user_tasks (
@@ -66,8 +69,33 @@ CREATE TABLE user_tasks (
 );
 
 -- Create index for user task lookups
-CREATE INDEX idx_user_tasks_user_id ON user_tasks(user_id);
-CREATE INDEX idx_user_tasks_task_id ON user_tasks(task_id);
+CREATE INDEX IF NOT EXISTS idx_user_tasks_user_id ON user_tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_tasks_task_id ON user_tasks(task_id);
+
+-- Create spin wheel rewards table
+CREATE TABLE IF NOT EXISTS spin_wheel_rewards (
+  id SERIAL PRIMARY KEY,
+  label TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  color VARCHAR(7) NOT NULL DEFAULT '#FFFFFF',
+  probability DECIMAL(5,2) NOT NULL DEFAULT 1.0,
+  is_active BOOLEAN DEFAULT true,
+  position INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Insert default spin wheel rewards
+INSERT INTO spin_wheel_rewards (label, points, color, probability, position) VALUES
+  ('50 Points', 50, '#EE4040', 0.5, 0),
+  ('10 Points', 10, '#F0CF50', 1.0, 1),
+  ('30 Points', 30, '#815CD1', 0.7, 2),
+  ('20 Points', 20, '#3DA5E0', 0.8, 3),
+  ('40 Points', 40, '#34A24F', 0.6, 4),
+  ('Try Again', 0, '#F9AA1F', 1.0, 5),
+  ('25 Points', 25, '#EC3F3F', 0.75, 6),
+  ('15 Points', 15, '#FF9000', 0.9, 7)
+ON CONFLICT DO NOTHING;
 
 -- Create spins table
 CREATE TABLE spins (
@@ -80,8 +108,8 @@ CREATE TABLE spins (
 );
 
 -- Create index for spin lookups
-CREATE INDEX idx_spins_user_id ON spins(user_id);
-CREATE INDEX idx_spins_created_at ON spins(created_at);
+CREATE INDEX IF NOT EXISTS idx_spins_user_id ON spins(user_id);
+CREATE INDEX IF NOT EXISTS idx_spins_created_at ON spins(created_at);
 
 -- Create youtube_tasks table
 CREATE TABLE IF NOT EXISTS youtube_tasks (
@@ -112,7 +140,7 @@ CREATE TABLE IF NOT EXISTS youtube_questions (
 );
 
 -- Create index for youtube_questions lookups
-CREATE INDEX idx_youtube_questions_task_id ON youtube_questions(youtube_task_id);
+CREATE INDEX IF NOT EXISTS idx_youtube_questions_task_id ON youtube_questions(youtube_task_id);
 
 -- Create table for tracking user question responses
 CREATE TABLE IF NOT EXISTS youtube_question_responses (
@@ -125,8 +153,8 @@ CREATE TABLE IF NOT EXISTS youtube_question_responses (
 );
 
 -- Create index for youtube_question_responses lookups
-CREATE INDEX idx_youtube_question_responses_user_id ON youtube_question_responses(user_id);
-CREATE INDEX idx_youtube_question_responses_question_id ON youtube_question_responses(question_id);
+CREATE INDEX IF NOT EXISTS idx_youtube_question_responses_user_id ON youtube_question_responses(user_id);
+CREATE INDEX IF NOT EXISTS idx_youtube_question_responses_question_id ON youtube_question_responses(question_id);
 
 -- Create telegram_channels table
 CREATE TABLE IF NOT EXISTS telegram_channels (
@@ -160,9 +188,9 @@ CREATE TABLE IF NOT EXISTS task_progress (
 );
 
 -- Create index for task progress lookups
-CREATE INDEX idx_task_progress_user_id ON task_progress(user_id);
-CREATE INDEX idx_task_progress_task_type ON task_progress(task_type);
-CREATE INDEX idx_task_progress_status ON task_progress(status);
+CREATE INDEX IF NOT EXISTS idx_task_progress_user_id ON task_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_task_progress_task_type ON task_progress(task_type);
+CREATE INDEX IF NOT EXISTS idx_task_progress_status ON task_progress(status);
 
 -- Create settings table for point configurations
 CREATE TABLE IF NOT EXISTS settings (
@@ -192,31 +220,6 @@ ON CONFLICT (key) DO UPDATE SET
   value = EXCLUDED.value,
   description = EXCLUDED.description;
 
--- Create spin wheel rewards table
-CREATE TABLE IF NOT EXISTS spin_wheel_rewards (
-  id SERIAL PRIMARY KEY,
-  label TEXT NOT NULL,
-  points INTEGER NOT NULL,
-  color VARCHAR(7) NOT NULL DEFAULT '#FFFFFF',
-  probability DECIMAL(5,2) NOT NULL DEFAULT 1.0,
-  is_active BOOLEAN DEFAULT true,
-  position INTEGER NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Insert default spin wheel rewards
-INSERT INTO spin_wheel_rewards (label, points, color, probability, position) VALUES
-  ('50 Points', 50, '#EE4040', 0.5, 0),
-  ('10 Points', 10, '#F0CF50', 1.0, 1),
-  ('30 Points', 30, '#815CD1', 0.7, 2),
-  ('20 Points', 20, '#3DA5E0', 0.8, 3),
-  ('40 Points', 40, '#34A24F', 0.6, 4),
-  ('Try Again', 0, '#F9AA1F', 1.0, 5),
-  ('25 Points', 25, '#EC3F3F', 0.75, 6),
-  ('15 Points', 15, '#FF9000', 0.9, 7)
-ON CONFLICT DO NOTHING;
-
 -- Create quizzes table
 CREATE TABLE IF NOT EXISTS quizzes (
   id SERIAL PRIMARY KEY,
@@ -242,8 +245,8 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
 );
 
 -- Create index for quiz lookups
-CREATE INDEX idx_quiz_questions_quiz_id ON quiz_questions(quiz_id);
-CREATE INDEX idx_quizzes_is_active ON quizzes(is_active);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz_id ON quiz_questions(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_is_active ON quizzes(is_active);
 
 -- Create user quiz attempts table
 CREATE TABLE IF NOT EXISTS user_quiz_attempts (
@@ -258,8 +261,8 @@ CREATE TABLE IF NOT EXISTS user_quiz_attempts (
 );
 
 -- Create index for quiz attempt lookups
-CREATE INDEX idx_user_quiz_attempts_user_id ON user_quiz_attempts(user_id);
-CREATE INDEX idx_user_quiz_attempts_quiz_id ON user_quiz_attempts(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_user_quiz_attempts_user_id ON user_quiz_attempts(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_quiz_attempts_quiz_id ON user_quiz_attempts(quiz_id);
 
 -- Insert default tasks
 INSERT INTO tasks (type, description, points)
@@ -353,10 +356,10 @@ CREATE TABLE IF NOT EXISTS user_submitted_promotions (
 );
 
 -- Create index for user submitted promotions lookups
-CREATE INDEX idx_user_submitted_promotions_user_id ON user_submitted_promotions(user_id);
-CREATE INDEX idx_user_submitted_promotions_status ON user_submitted_promotions(status);
-CREATE INDEX idx_user_submitted_promotions_type ON user_submitted_promotions(type);
-CREATE INDEX idx_user_submitted_promotions_created_at ON user_submitted_promotions(created_at);
+CREATE INDEX IF NOT EXISTS idx_user_submitted_promotions_user_id ON user_submitted_promotions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_submitted_promotions_status ON user_submitted_promotions(status);
+CREATE INDEX IF NOT EXISTS idx_user_submitted_promotions_type ON user_submitted_promotions(type);
+CREATE INDEX IF NOT EXISTS idx_user_submitted_promotions_created_at ON user_submitted_promotions(created_at);
 
 -- Create user_promotion_engagements table to track user interactions
 CREATE TABLE IF NOT EXISTS user_promotion_engagements (
@@ -370,9 +373,9 @@ CREATE TABLE IF NOT EXISTS user_promotion_engagements (
 );
 
 -- Create index for user promotion engagements lookups
-CREATE INDEX idx_user_promotion_engagements_user_id ON user_promotion_engagements(user_id);
-CREATE INDEX idx_user_promotion_engagements_promotion_id ON user_promotion_engagements(promotion_id);
-CREATE INDEX idx_user_promotion_engagements_type ON user_promotion_engagements(engagement_type);
+CREATE INDEX IF NOT EXISTS idx_user_promotion_engagements_user_id ON user_promotion_engagements(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_promotion_engagements_promotion_id ON user_promotion_engagements(promotion_id);
+CREATE INDEX IF NOT EXISTS idx_user_promotion_engagements_type ON user_promotion_engagements(engagement_type);
 
 -- Migration: Add is_banned column to telegram_users
 -- Migration: Change completed_user_ids in youtube_tasks from INTEGER[] to BIGINT[]

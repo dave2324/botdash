@@ -2,6 +2,33 @@
 ALTER TABLE user_submitted_promotions 
 ADD COLUMN promotion_data JSONB DEFAULT '{}'::jsonb;
 
+-- Ensure task_progress exists (older databases may not have it)
+DO $$
+BEGIN
+  IF to_regclass('public.task_progress') IS NULL THEN
+    IF to_regclass('public.telegram_users') IS NULL THEN
+      RAISE EXCEPTION 'Missing required table telegram_users. Run: RUN_SCHEMA=true npm run migrate (or npm run migrate:all) to initialize schema.';
+    END IF;
+
+    CREATE TABLE task_progress (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES telegram_users(id),
+      task_type VARCHAR(50) NOT NULL,
+      task_id INTEGER NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      points_earned INTEGER DEFAULT 0,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(user_id, task_type, task_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_progress_user_id ON task_progress(user_id);
+    CREATE INDEX IF NOT EXISTS idx_task_progress_task_type ON task_progress(task_type);
+    CREATE INDEX IF NOT EXISTS idx_task_progress_status ON task_progress(status);
+  END IF;
+END $$;
+
 -- Create function to update promotion stats
 CREATE OR REPLACE FUNCTION update_promotion_stats()
 RETURNS TRIGGER AS $$

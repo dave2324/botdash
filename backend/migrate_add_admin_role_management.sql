@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS admin_permissions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Ensure resource column exists on admin_permissions for older schemas
+ALTER TABLE admin_permissions
+  ADD COLUMN IF NOT EXISTS resource VARCHAR(100);
+
 -- Create admin_users table
 CREATE TABLE IF NOT EXISTS admin_users (
     id SERIAL PRIMARY KEY,
@@ -52,15 +56,17 @@ CREATE TABLE IF NOT EXISTS admin_activity_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert default superadmin role
+-- Insert default superadmin role (idempotent)
 INSERT INTO admin_roles (name, description) 
-VALUES ('superadmin', 'Full access to all system features and settings');
+VALUES ('superadmin', 'Full access to all system features and settings')
+ON CONFLICT (name) DO NOTHING;
 
--- Insert default admin role
+-- Insert default admin role (idempotent)
 INSERT INTO admin_roles (name, description) 
-VALUES ('admin', 'Access to operational tasks without system settings');
+VALUES ('admin', 'Access to operational tasks without system settings')
+ON CONFLICT (name) DO NOTHING;
 
--- Insert default permissions
+-- Insert default permissions (idempotent)
 -- Task management permissions
 INSERT INTO admin_permissions (name, description, resource) 
 VALUES 
@@ -86,29 +92,39 @@ VALUES
     -- Admin management (for superadmin)
     ('view_admins', 'View admin accounts', 'admins'),
     ('manage_admins', 'Create/edit/delete admin accounts', 'admins'),
-    ('manage_roles', 'Create/edit/delete roles and permissions', 'roles');
+    ('manage_roles', 'Create/edit/delete roles and permissions', 'roles')
+ON CONFLICT (name) DO NOTHING;
 
--- Assign all permissions to superadmin role
+-- Assign all permissions to superadmin role (skip existing)
 INSERT INTO admin_role_permissions (role_id, permission_id)
 SELECT 
     (SELECT id FROM admin_roles WHERE name = 'superadmin'),
-    id
-FROM admin_permissions;
+    p.id
+FROM admin_permissions p
+LEFT JOIN admin_role_permissions arp
+  ON arp.role_id = (SELECT id FROM admin_roles WHERE name = 'superadmin')
+ AND arp.permission_id = p.id
+WHERE arp.role_id IS NULL;
 
--- Assign operational permissions to admin role
+-- Assign operational permissions to admin role (skip existing)
 INSERT INTO admin_role_permissions (role_id, permission_id)
 SELECT 
     (SELECT id FROM admin_roles WHERE name = 'admin'),
-    id
-FROM admin_permissions 
-WHERE name IN (
+    p.id
+FROM admin_permissions p
+LEFT JOIN admin_role_permissions arp
+  ON arp.role_id = (SELECT id FROM admin_roles WHERE name = 'admin')
+ AND arp.permission_id = p.id
+WHERE arp.role_id IS NULL
+  AND p.name IN (
     'view_tasks', 'approve_tasks', 
     'view_users', 
     'view_finances',
     'view_settings'
-);
+  );
 
--- Create indexes for better query performance
-CREATE INDEX admin_users_role_id_idx ON admin_users(role_id);
-CREATE INDEX admin_activity_logs_admin_id_idx ON admin_activity_logs(admin_id);
-CREATE INDEX admin_activity_logs_created_at_idx ON admin_activity_logs(created_at);
+-- Create indexes for better query performance (idempotent)
+CREATE INDEX IF NOT EXISTS admin_users_role_id_idx ON admin_users(role_id);
+-- Note: admin_activity_logs uses admin_user_id (from earlier migration), not admin_id
+CREATE INDEX IF NOT EXISTS admin_activity_logs_admin_user_id_idx ON admin_activity_logs(admin_user_id);
+CREATE INDEX IF NOT EXISTS admin_activity_logs_created_at_idx ON admin_activity_logs(created_at);
