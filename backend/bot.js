@@ -1,6 +1,7 @@
 const TelegramBotApi = require('node-telegram-bot-api');
 const path = require('path');
 const { logger } = require('./config/logger');
+const pool = require('./config/database'); // shared DB pool (used by /start welcome_message lookup, etc.)
 
 class TelegramBot {
   constructor(botToken) {
