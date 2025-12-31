@@ -1,66 +1,34 @@
-const { TelegramClient } = require('telegram');
-const { StoreSession } = require('telegram/sessions');
-const { NewMessage } = require('telegram/events');
-const { Api } = require('telegram');
+const TelegramBotApi = require('node-telegram-bot-api');
 const path = require('path');
 const { logger } = require('./config/logger');
 
 class TelegramBot {
-  constructor(apiId, apiHash, botToken) {
-    this.apiId = apiId;
-    this.apiHash = apiHash;
+  constructor(botToken) {
     this.botToken = botToken;
-    this.client = null;
-    this.sessionFolder = 'bot_sessions';
+    this.bot = null;
     this.isReady = false;
   }
 
   async start() {
     try {
-      // Create a logger that only logs errors
-      const customLogger = {
-        log: () => {},
-        info: () => {},
-        warn: (message) => logger.warn(message),
-        error: (message) => logger.error(message),
-        debug: () => {},
-        canSend: () => true // Fix for MTProtoSender error
-      };
+      if (!this.botToken) {
+        logger.warn('BOT_TOKEN is not set. Skipping bot startup.');
+        return;
+      }
 
-      // Initialize the client with a Store Session (saves to files automatically)
-      this.client = new TelegramClient(
-        new StoreSession(this.sessionFolder), // Store session for persistence
-        this.apiId,
-        this.apiHash,
-        {
-          connectionRetries: Infinity, // Keep retrying connection
-          connectionRetryDelay: 1000, // Delay between retries in ms
-          autoReconnect: true, // Enable auto reconnection
-          baseLogger: customLogger, // Use custom logger to track errors
-          useWSS: true, // Use secure WebSocket
-          maxReconnects: Infinity // Keep trying to reconnect
-        }
-      );
-
-      // Start the client and sign in as a bot
-      await this.client.start({
-        botAuthToken: this.botToken
+      // Initialize standard Bot API client with polling
+      this.bot = new TelegramBotApi(this.botToken, {
+        polling: true
       });
 
       this.isReady = true;
-      logger.info('Bot started successfully');
-      
+      logger.info('Bot started successfully (Bot API polling mode)');
+
       // Setup channel membership verification scheduler
       this.setupChannelVerificationScheduler();
 
       // Register message handlers
       this.registerHandlers();
-      
-      // Start connection monitoring
-      this.startConnectionMonitoring();
-      
-      // Initial connection verification
-      await this.ensureConnection();
     } catch (error) {
       logger.error('Error starting bot:', error);
       throw error;
@@ -68,46 +36,26 @@ class TelegramBot {
   }
 
   isClientReady() {
-    return this.isReady && this.client !== null;
+    return this.isReady && this.bot !== null;
   }
 
   async ensureConnection() {
-    try {
-      if (!this.client) {
-        logger.error('Client is null, attempting to reinitialize...');
-        await this.start();
-        return;
-      }
-
-      if (!this.client.connected) {
-        logger.warn('Client disconnected, attempting to reconnect...');
-        await this.client.connect();
-        
-        // Verify the connection by making a simple API call
-        try {
-          await this.client.getMe();
-          logger.info('Bot reconnected successfully');
-        } catch (error) {
-          logger.error('Failed to verify bot connection:', error);
-          // Force a new connection attempt
-          await this.client.disconnect();
-          await this.client.connect();
-        }
-      }
-    } catch (error) {
-      logger.error('Error in ensureConnection:', error);
-      // Schedule a retry
-      setTimeout(() => this.ensureConnection(), 5000);
+    // node-telegram-bot-api handles reconnection internally in polling mode,
+    // so this method simply checks that the bot instance exists.
+    if (!this.bot) {
+      logger.error('Bot instance is null, attempting to reinitialize...');
+      await this.start();
     }
   }
 
   // Start a periodic connection check
   startConnectionMonitoring() {
-    // Check connection every 30 seconds
+    // For Bot API polling, reconnection is handled by the library,
+    // but we keep this method for compatibility and logging.
     setInterval(() => {
-      if (this.isReady && (!this.client || !this.client.connected)) {
-        logger.warn('Detected disconnected state in periodic check');
-        this.ensureConnection();
+      if (!this.bot) {
+        logger.warn('Bot instance missing in periodic check, restarting...');
+        this.start();
       }
     }, 30000);
   }
@@ -198,7 +146,7 @@ class TelegramBot {
   async getChannelInfo(channelIdentifier) {
     try {
       // Try to get the channel entity
-      const entity = await this.client.getEntity(channelIdentifier);
+      const entity = await this.bot.getChat(channelIdentifier);
       
       if (!entity) {
         throw new Error('Channel not found or bot does not have access');
@@ -206,18 +154,15 @@ class TelegramBot {
       
       // Check if the bot has admin rights
       try {
-        const fullChannel = await this.client.invoke(new Api.channels.GetParticipant({
-          channel: entity.id,
-          participant: 'me'
-        }));
+        const fullChannel = await this.bot.getChatAdministrators(channelIdentifier);
         
-        if (!fullChannel || !fullChannel.participant) {
+        if (!fullChannel || !fullChannel.find(admin => admin.user.id === this.bot.options.credentials.id)) {
           throw new Error('Bot is not a member of the channel');
         }
         
         // Check if the bot is an admin
-        const isAdmin = fullChannel.participant.className === 'ChannelParticipantAdmin' ||
-                       fullChannel.participant.className === 'ChannelParticipantCreator';
+        const isAdmin = fullChannel.find(admin => admin.user.id === this.bot.options.credentials.id).status === 'creator' ||
+                       fullChannel.find(admin => admin.user.id === this.bot.options.credentials.id).status === 'administrator';
         
         return {
           id: entity.id.toString(),
@@ -225,7 +170,7 @@ class TelegramBot {
           username: entity.username,
           isPrivate: !entity.username, // If no username, it's a private channel
           isAdmin: isAdmin,
-          accessHash: entity.accessHash?.toString() || null
+          accessHash: null
         };
       } catch (error) {
         logger.error('Error checking bot admin status:', error);
@@ -248,25 +193,17 @@ class TelegramBot {
       if (!this.isClientReady()) {
         await this.ensureConnection();
       }
-      
-      // Get channel entity
-      const entity = await this.client.getEntity(channelIdentifier);
-      if (!entity) {
-        throw new Error('Channel not found or bot does not have access');
-      }
-      
+
       try {
-        // Try to get the participant info
-        const participant = await this.client.invoke(new Api.channels.GetParticipant({
-          channel: entity,
-          participant: parseInt(userId)
-        }));
-        
-        // If we can get participant info without error, user is in the channel
-        return !!participant && !!participant.participant;
+        // For Bot API, use getChatMember with channel username or ID
+        const member = await this.bot.getChatMember(channelIdentifier, parseInt(userId));
+
+        // If we get a valid status that is not "left" or "kicked", user is considered a member
+        const status = member && member.status;
+        return status && status !== 'left' && status !== 'kicked';
       } catch (error) {
-        // If we get "User not found" error, it means the user is not in the channel
-        logger.info(`User ${userId} is not a member of channel ${entity.title || channelIdentifier}`);
+        // If we get an error like "user not found" or similar, log and treat as not a member
+        logger.info(`User ${userId} is not a member of channel ${channelIdentifier}`);
         return false;
       }
     } catch (error) {
@@ -379,9 +316,8 @@ class TelegramBot {
           if (userLeftAnyChannel) {
             try {
               // Try to send a direct message to the user
-              await this.client.sendMessage(parseInt(user.id), {
-                message: `⚠️ Channel Membership Alert ⚠️\n\nYou have left one or more Telegram channels you were paid to join. Your ability to earn points has been temporarily suspended. Please rejoin the channels to continue earning.`
-              });
+              await this.bot.sendMessage(parseInt(user.id, 10),
+                '⚠️ Channel Membership Alert ⚠️\n\nYou have left one or more Telegram channels you were paid to join. Your ability to earn points has been temporarily suspended. Please rejoin the channels to continue earning.');
             } catch (msgError) {
               logger.error(`Failed to send notification message to user ${user.id}:`, msgError);
             }
@@ -469,14 +405,12 @@ class TelegramBot {
       );
       
       // Send notification to referrer if we have a client
-      if (this.client) {
+      if (this.bot) {
         try {
           const userDisplayName = user.first_name || user.username || 'A new user';
           const notificationMessage = `🎉 Referral Bonus!\n\n${userDisplayName} has joined using your referral link!\n\nYou've received ${REFERRAL_POINTS} points as a reward. Your total points are now ${newPoints}.`;
           
-          await this.client.sendMessage(referrerId, {
-            message: notificationMessage
-          });
+          await this.bot.sendMessage(referrerId, notificationMessage);
           
           logger.info(`Sent referral notification to user ${referrerId}`);
         } catch (msgError) {
@@ -544,7 +478,7 @@ class TelegramBot {
       const pool = require('./config/database');
       
       // Make sure we're using the raw numeric ID
-      const senderId = typeof sender.id === 'object' ? sender.id.toString() : sender.id;
+      const senderId = sender.id;
       const userIdNum = parseInt(senderId, 10);
       
       if (isNaN(userIdNum)) {
@@ -576,9 +510,9 @@ class TelegramBot {
         [
           userIdNum, 
           sender.username || '', 
-          sender.firstName || '', 
-          sender.lastName || '', 
-          sender.langCode || 'en'
+          sender.first_name || '', 
+          sender.last_name || '', 
+          sender.language_code || 'en'
         ]
       );
       
@@ -621,100 +555,71 @@ class TelegramBot {
   }
 
   registerHandlers() {
-    // Add connection monitoring
-    this.client.addEventHandler((update) => {
-      if (update.className === 'UpdateConnectionState') {
-        if (update.state.className === 'ConnectionNotConnected') {
-          logger.warn('Bot disconnected, attempting to reconnect...');
-          this.ensureConnection();
-        }
-      }
-    });
+    if (!this.bot) return;
 
     // Handle /start command with error recovery
-    this.client.addEventHandler(async ({ message }) => {
-      if (!message || !message.message) return; // Guard against invalid messages
-      
-      if (message.message.startsWith('/start')) {
-        try {
-          const sender = await message.getSender();
-          
-          // Register user in database
-          const registrationResult = await this.registerUser(sender);
-          
-          let welcomeMessage = `👋 Welcome to MelaTech, ${sender.firstName}!
+    this.bot.onText(/^\/start(?:\s+(.*))?/, async (msg, match) => {
+      try {
+        const sender = msg.from;
+
+        // Register user in database
+        const registrationResult = await this.registerUser(sender);
+
+        let welcomeMessage = `👋 Welcome to Dashbot, ${sender.first_name || ''}!
 
 🎮 Here's what you can do:
 • Play games and earn points
 • Complete daily tasks
 • Refer friends for bonus points
-• Withdraw your earnings
+• Withdraw your earnings`;
 
-Use our Mini App to get started! 🚀`;
+        if (registrationResult.success) {
+          // Add points info to the welcome message
+          const points = registrationResult.user.points || 0;
+          welcomeMessage += `\n\nYour current points: ${points}`;
+        }
 
-          if (registrationResult.success) {
-            // Add points info to the welcome message
-            const points = registrationResult.user.points || 0;
-            welcomeMessage += `\n\nYour current points: ${points}`;
-          }
+        // Check for referral code in /start params
+        const startParam = match && match[1] ? match[1].trim() : '';
+        if (startParam && startParam.startsWith('ref')) {
+          const referralCode = startParam.substring(3); // Remove 'ref' prefix
 
-                    // Check for referral code
-          const startParams = message.message.split(' ');
-          if (startParams.length > 1 && startParams[1].startsWith('ref')) {
-            const referralCode = startParams[1].substring(3); // Remove 'ref' prefix
-            // Make sure we're using the raw numeric ID
-            const senderId = typeof sender.id === 'object' ? sender.id.toString() : sender.id;
-            
-            const userInfo = {
-              username: sender.username || '',
-              first_name: sender.firstName || '',
-              last_name: sender.lastName || ''
-            };
-            
-            const referralResult = await this.processReferral(senderId, referralCode, userInfo);
-            
-            if (referralResult.success) {
-              const referrerName = referralResult.referrer.first_name || referralResult.referrer.username || 'Someone';
-              welcomeMessage += `\n\n🎉 You were referred by ${referrerName}. They received ${referralResult.points} points!`;
-            }
-          }
+          const userInfo = {
+            username: sender.username || '',
+            first_name: sender.first_name || '',
+            last_name: sender.last_name || ''
+          };
 
-          // Using the correct keyboard markup format
-          await this.client.sendMessage(message.chatId, {
-            message: welcomeMessage,
-            buttons: new Api.ReplyInlineMarkup({
-              rows: [
-                new Api.KeyboardButtonRow({
-                  buttons: [
-                    new Api.KeyboardButtonWebView({
-                      text: '🎮 Open Mini App',
-                      url: process.env.MINI_APP_URL || 'https://url.com'
-                    })
-                  ]
-                })
-              ]
-            })
-          });
-        } catch (error) {
-          logger.error('Error handling start command:', error);
-          // Fallback to plain message without buttons if markup fails
-          try {
-            const sender = await message.getSender();
-            const fallbackMessage = `👋 Welcome to MelaTech, ${sender.firstName}!
+          const referralResult = await this.processReferral(sender.id, referralCode, userInfo);
 
-🎮 Visit our Mini App at: ${process.env.MINI_APP_URL || 'https://t.me/miniapp'}`;
-
-            await this.client.sendMessage(message.chatId, { message: fallbackMessage });
-          } catch (fallbackError) {
-            logger.error('Fallback message also failed:', fallbackError);
+          if (referralResult.success) {
+            const referrerName =
+              referralResult.referrer.first_name ||
+              referralResult.referrer.username ||
+              'Someone';
+            welcomeMessage += `\n\n🎉 You were referred by ${referrerName}. They received ${referralResult.points} points!`;
           }
         }
-      }
-      
-      // Handle /help command
-      if (message.message.startsWith('/help')) {
+
+        await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+      } catch (error) {
+        logger.error('Error handling start command:', error);
+        // Fallback to plain message without buttons if markup fails
         try {
-          const helpMessage = `📚 **MelaTech Help**
+          const sender = msg.from;
+          const fallbackMessage = `👋 Welcome to Dashbot, ${sender.first_name || ''}!`;
+
+          await this.bot.sendMessage(msg.chat.id, fallbackMessage);
+        } catch (fallbackError) {
+          logger.error('Fallback message also failed:', fallbackError);
+        }
+      }
+    });
+
+    // Handle /help command
+    this.bot.onText(/^\/help/, async (msg) => {
+      try {
+        const helpMessage = `📚 *Dashbot Help*
 
 *Available Commands:*
 /start - Start the bot and get welcome message
@@ -730,97 +635,94 @@ Use our Mini App to get started! 🚀`;
 
 Need more help? Contact our support team.`;
 
-          await this.client.sendMessage(message.chatId, { 
-            message: helpMessage,
-            parseMode: 'markdown'
-          });
-        } catch (error) {
-          logger.error('Error handling help command:', error);
-        }
+        await this.bot.sendMessage(msg.chat.id, helpMessage, {
+          parse_mode: 'Markdown'
+        });
+      } catch (error) {
+        logger.error('Error handling help command:', error);
       }
+    });
 
-      // Handle /points command
-      if (message.message.startsWith('/points')) {
-        try {
-          const sender = await message.getSender();
-          // Make sure we're using the raw numeric ID
-          const senderId = typeof sender.id === 'object' ? sender.id.toString() : sender.id;
-          
-          const pool = require('./config/database');
-          
-          // Get user's points
-          const userResult = await pool.query(
-            'SELECT points FROM telegram_users WHERE id = $1',
-            [parseInt(senderId, 10)]
-          );
-          
-          let pointsMessage = "";
-          
-          if (userResult.rows.length > 0) {
-            const points = userResult.rows[0].points || 0;
-            pointsMessage = `💰 You currently have ${points} points.`;
-            
-            if (points === 0) {
-              pointsMessage += "\n\nComplete tasks in the Mini App to earn more!";
-            } else if (points < 50) {
-              pointsMessage += "\n\nKeep going! Refer friends to earn more points quickly.";
-            } else if (points >= 50 && points < 200) {
-              pointsMessage += "\n\nYou're doing great! Keep completing tasks to earn rewards.";
-            } else {
-              pointsMessage += "\n\nImpressive! You're one of our top users.";
-            }
+    // Handle /points command
+    this.bot.onText(/^\/points/, async (msg) => {
+      try {
+        const sender = msg.from;
+        const senderId = sender.id;
+
+        const pool = require('./config/database');
+
+        // Get user's points
+        const userResult = await pool.query(
+          'SELECT points FROM telegram_users WHERE id = $1',
+          [parseInt(senderId, 10)]
+        );
+
+        let pointsMessage = '';
+
+        if (userResult.rows.length > 0) {
+          const points = userResult.rows[0].points || 0;
+          pointsMessage = `💰 You currently have ${points} points.`;
+
+          if (points === 0) {
+            pointsMessage += '\n\nComplete tasks in the Mini App to earn more!';
+          } else if (points < 50) {
+            pointsMessage += '\n\nKeep going! Refer friends to earn more points quickly.';
+          } else if (points >= 50 && points < 200) {
+            pointsMessage += "\n\nYou're doing great! Keep completing tasks to earn rewards.";
           } else {
-            pointsMessage = "You are not registered yet. Please use /start to register.";
+            pointsMessage += "\n\nImpressive! You're one of our top users.";
           }
-          
-          await this.client.sendMessage(message.chatId, {
-            message: pointsMessage
-          });
-        } catch (error) {
-          logger.error('Error handling points command:', error);
-          await this.client.sendMessage(message.chatId, {
-            message: "Sorry, there was an error checking your points. Please try again later."
-          });
+        } else {
+          pointsMessage = 'You are not registered yet. Please use /start to register.';
         }
-      }
 
-      // Handle /referral command
-      if (message.message.startsWith('/referral')) {
-        try {
-          const sender = await message.getSender();
-          // Make sure we're using the raw numeric ID
-          const senderId = typeof sender.id === 'object' ? sender.id.toString() : sender.id;
-          const referralInfo = await this.getUserReferralLink(senderId);
-          
-          if (referralInfo.success) {
-            const referralMessage = `🔗 Your Referral Link:
+        await this.bot.sendMessage(msg.chat.id, pointsMessage);
+      } catch (error) {
+        logger.error('Error handling points command:', error);
+        await this.bot.sendMessage(
+          msg.chat.id,
+          'Sorry, there was an error checking your points. Please try again later.'
+        );
+      }
+    });
+
+    // Handle /referral command
+    this.bot.onText(/^\/referral/, async (msg) => {
+      try {
+        const sender = msg.from;
+        const senderId = sender.id;
+        const referralInfo = await this.getUserReferralLink(senderId);
+
+        if (referralInfo.success) {
+          const referralMessage = `🔗 Your Referral Link:
 ${referralInfo.referralLink}
 
 Your Referral Code: ${referralInfo.referralCode}
 
 Share this link with friends and earn 30 points for each new user who joins!`;
-            
-            await this.client.sendMessage(message.chatId, {
-              message: referralMessage
-            });
-          } else {
-            await this.client.sendMessage(message.chatId, {
-              message: `⚠️ ${referralInfo.message || 'Unable to generate referral link at this time.'} Please try again later.`
-            });
-          }
-        } catch (error) {
-          logger.error('Error handling referral command:', error);
-          await this.client.sendMessage(message.chatId, {
-            message: "⚠️ Error generating your referral link. Please try again later."
-          });
+
+          await this.bot.sendMessage(msg.chat.id, referralMessage);
+        } else {
+          await this.bot.sendMessage(
+            msg.chat.id,
+            `⚠️ ${
+              referralInfo.message || 'Unable to generate referral link at this time.'
+            } Please try again later.`
+          );
         }
+      } catch (error) {
+        logger.error('Error handling referral command:', error);
+        await this.bot.sendMessage(
+          msg.chat.id,
+          '⚠️ Error generating your referral link. Please try again later.'
+        );
       }
-    }, new NewMessage({}));
+    });
   }
 
   async stop() {
-    if (this.client) {
-      await this.client.disconnect();
+    if (this.bot) {
+      await this.bot.stopPolling();
       console.log('Bot stopped');
     }
   }
@@ -831,11 +733,7 @@ let botInstance = null;
 
 const createBot = async () => {
   if (!botInstance) {
-    botInstance = new TelegramBot(
-      process.env.API_ID,
-      process.env.API_HASH,
-      process.env.BOT_TOKEN
-    );
+    botInstance = new TelegramBot(process.env.BOT_TOKEN);
     await botInstance.start();
   }
   return botInstance;

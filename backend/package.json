@@ -24,6 +24,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.61.0",
     "pdfkit": "^0.17.2",
     "pg": "^8.10.0",
     "telegram": "^2.18.37",
