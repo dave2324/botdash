@@ -190,7 +190,7 @@ export default function Sidebar() {
     >
       <div className="flex flex-col h-full" style={scrollbarStyles}>
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">Mini App Game</h1>
+          <h1 className="text-2xl font-bold text-white">Dashbot</h1>
           <p className="text-gray-400 text-sm text-white">Admin Panel</p>
         </div>
         

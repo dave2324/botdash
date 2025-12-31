@@ -10,7 +10,7 @@ const { logger, logHelper } = require('./config/logger');
 const app = express();
 
 // Log application startup
-logger.info('Starting MiniApp Backend Server', {
+logger.info('Starting Dashbot Backend Server', {
   nodeVersion: process.version,
   environment: process.env.NODE_ENV || 'development',
   timestamp: new Date().toISOString()

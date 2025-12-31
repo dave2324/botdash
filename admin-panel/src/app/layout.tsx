@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mini App Game - Admin Panel",
-  description: "Admin panel for managing Mini App Game",
+  title: "Dashbot - Admin Panel",
+  description: "Admin panel for managing Dashbot",
 };
 
 export default function RootLayout({

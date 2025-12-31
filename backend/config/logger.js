@@ -82,7 +82,7 @@ const httpLogsTransport = new DailyRotateFile({
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   levels,
-  defaultMeta: { service: 'miniapp-backend' },
+  defaultMeta: { service: 'dashbot-backend' },
   transports: [
     allLogsTransport,
     errorLogsTransport,

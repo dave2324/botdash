@@ -191,8 +191,8 @@ export default function UsersPage() {
           </div>
         </div>
         <div className="mb-4">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Miniapp Users</h1>
-          <p className="text-gray-600 mb-4">Manage users of your Telegram miniapp</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashbot Users</h1>
+          <p className="text-gray-600 mb-4">Manage users of your Dashbot Telegram bot</p>
           <h2 className={`text-xl font-semibold ${showBanned ? 'text-red-600' : 'text-emerald-700'}`}>
             {showBanned ? 'Banned Users' : 'Current Users'}
             {showPremium === true && ' - Premium Only'}

@@ -1,7 +1,7 @@
 {
-  "name": "miniapp-backend",
+  "name": "dashbot-backend",
   "version": "1.0.0",
-  "description": "Backend for Telegram Mini App Game",
+  "description": "Backend for Dashbot Telegram bot",
   "license": "ISC",
   "author": "",
   "type": "commonjs",
