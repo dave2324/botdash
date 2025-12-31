@@ -48,16 +48,22 @@ const upload = multer({
   }
 });
 
-// Function to send bot notifications
+// Function to send bot notifications (single user)
 const sendBotNotification = async (userId, message) => {
   try {
     const bot = await createBot();
-    await bot.client.sendMessage(userId, { 
-      message,
-      parseMode: 'html'
+    if (!bot || !bot.bot) {
+      console.error('Bot instance not ready for notifications');
+      return false;
+    }
+
+    await bot.bot.sendMessage(userId, message, {
+      parse_mode: 'HTML'
     });
+    return true;
   } catch (error) {
     console.error('Error sending bot notification:', error);
+    return false;
   }
 };
 
@@ -84,6 +90,65 @@ router.use('/courses', coursesRouter);
 router.use('/local-ads', localAdsRouter);
 router.use('/staff', adminUsersRouter); // Admin users management
 router.use('/', activityLogsModule.router); // Activity logs routes
+
+// Simple bulk messaging endpoint
+// POST /admin/broadcast
+// Body: { message: string, target?: 'all' | 'premium' | 'non_banned' }
+router.post('/broadcast', adminAuth, async (req, res) => {
+  try {
+    const { message, target = 'all' } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ message: 'Message text is required' });
+    }
+
+    // Build basic filter
+    let where = 'TRUE';
+    const params = [];
+
+    if (target === 'premium') {
+      where = 'is_premium = TRUE AND is_banned = FALSE';
+    } else if (target === 'non_banned') {
+      where = 'is_banned = FALSE';
+    }
+
+    const usersResult = await pool.query(
+      `SELECT id FROM telegram_users WHERE ${where}`,
+      params
+    );
+
+    const userIds = usersResult.rows.map((u) => u.id);
+
+    if (userIds.length === 0) {
+      return res.status(200).json({
+        sent: 0,
+        failed: 0,
+        message: 'No users matched the selected filter'
+      });
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    // Send sequentially to avoid hitting rate limits too hard
+    for (const id of userIds) {
+      const ok = await sendBotNotification(id, message);
+      if (ok) sent++;
+      else failed++;
+      // Small delay between messages
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return res.status(200).json({
+      sent,
+      failed,
+      total: userIds.length
+    });
+  } catch (error) {
+    console.error('Error in /admin/broadcast:', error);
+    return res.status(500).json({ message: 'Server error while broadcasting' });
+  }
+});
 
 // Admin login endpoint
 router.post('/login', async (req, res) => {

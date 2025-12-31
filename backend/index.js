@@ -417,13 +417,9 @@ const PORT = process.env.PORT || 3000;
   });
 
   try {
+    // createBot() now fully initializes and starts the bot (polling mode).
+    // No need to call start() again here.
     bot = await createBot();
-
-    // Some implementations may already start the bot inside createBot().
-    // Calling start() again should be safe, but wrap just in case.
-    if (bot && typeof bot.start === 'function') {
-      await bot.start();
-    }
 
     logger.info('Telegram bot started successfully', {
       botToken: process.env.BOT_TOKEN ? '[REDACTED]' : 'NOT_SET',

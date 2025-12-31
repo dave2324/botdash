@@ -718,6 +718,119 @@ Share this link with friends and earn 30 points for each new user who joins!`;
         );
       }
     });
+
+    // Handle /menu command to show interactive help-style menu
+    this.bot.onText(/^\/menu/, async (msg) => {
+      try {
+        const chatId = msg.chat.id;
+
+        await this.bot.sendMessage(chatId, 'Please choose your language:', {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: 'العربية', callback_data: 'lang:ar' },
+                { text: 'English', callback_data: 'lang:en' },
+                { text: 'Русский', callback_data: 'lang:ru' },
+                { text: 'Française', callback_data: 'lang:fr' }
+              ]
+            ]
+          }
+        });
+      } catch (error) {
+        logger.error('Error handling /menu command:', error);
+      }
+    });
+
+    // Handle inline keyboard steps (language -> country -> topic)
+    this.bot.on('callback_query', async (query) => {
+      try {
+        const data = query.data || '';
+        const chatId = query.message.chat.id;
+
+        // Step 1: language selected -> ask for country (keep previous row)
+        if (data.startsWith('lang:')) {
+          const lang = data.split(':')[1];
+
+          await this.bot.sendMessage(chatId, 'Please select a country:', {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Qatar 🇶🇦', callback_data: `country:${lang}:qa` },
+                  { text: 'UK 🇬🇧', callback_data: `country:${lang}:uk` }
+                ],
+                [
+                  { text: 'Kuwait 🇰🇼', callback_data: `country:${lang}:kw` },
+                  { text: 'Other', callback_data: `country:${lang}:other` }
+                ]
+              ]
+            }
+          });
+        }
+
+        // Step 2: country selected -> ask for help topic (keep previous rows)
+        else if (data.startsWith('country:')) {
+          const parts = data.split(':');
+          const lang = parts[1];
+          const country = parts[2];
+
+          await this.bot.sendMessage(chatId, 'How can we help you?', {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Job requests', callback_data: `topic:${lang}:${country}:job` },
+                  { text: 'Support', callback_data: `topic:${lang}:${country}:support` }
+                ],
+                [
+                  { text: 'Business', callback_data: `topic:${lang}:${country}:business` }
+                ]
+              ]
+            }
+          });
+        }
+
+        // Step 3: topic selected -> send canned answer
+        else if (data.startsWith('topic:')) {
+          const parts = data.split(':');
+          const lang = parts[1];
+          const country = parts[2];
+          const topic = parts[3];
+
+          let response = '';
+
+          if (lang === 'ar') {
+            if (topic === 'job') {
+              response = 'سيتم مراجعة طلب التوظيف الخاص بك من قبل فريقنا. شكراً لاهتمامك.';
+            } else if (topic === 'support') {
+              response = 'سيتم إيصالك مع موظف خدمة الدعم الفني في أقرب وقت.';
+            } else {
+              response = 'شكرًا لتواصلك معنا. سيتم مراجعة طلبك والرد عليك قريبًا.';
+            }
+          } else {
+            // Default English-style messages
+            if (topic === 'job') {
+              response = 'Your job request has been received. Our team will review it as soon as possible.';
+            } else if (topic === 'support') {
+              response = 'You will be connected to a support agent shortly. Thank you for your patience.';
+            } else {
+              response = 'Thank you for contacting us. We will review your inquiry and respond as soon as we can.';
+            }
+
+            if (country === 'uk') {
+              response += '\n\nNote: Our services may be limited or unavailable in the UK.';
+            }
+          }
+
+          await this.bot.sendMessage(chatId, 'Thank you. Here is an automated reply:');
+
+          await this.bot.sendMessage(chatId, response);
+        }
+
+        // Always answer callback to remove loading state in Telegram UI
+        await this.bot.answerCallbackQuery(query.id).catch(() => {});
+      } catch (error) {
+        logger.error('Error handling callback_query:', error);
+      }
+    });
   }
 
   async stop() {
