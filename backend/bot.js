@@ -7,6 +7,7 @@ class TelegramBot {
     this.botToken = botToken;
     this.bot = null;
     this.isReady = false;
+    this.botUsername = null; // cached from getMe()
   }
 
   async start() {
@@ -20,6 +21,20 @@ class TelegramBot {
       this.bot = new TelegramBotApi(this.botToken, {
         polling: true
       });
+
+      // Try to detect and cache bot username so we don't require BOT_USERNAME env
+      try {
+        const me = await this.bot.getMe();
+        this.botUsername = me && me.username ? me.username : null;
+        if (this.botUsername) {
+          logger.info('Detected bot username from Telegram API', { username: this.botUsername });
+        } else {
+          logger.warn('Bot username missing in getMe() response; referral links will omit @username');
+        }
+      } catch (meError) {
+        logger.warn('Failed to fetch bot username via getMe(); proceeding without cached username', meError);
+        this.botUsername = null;
+      }
 
       this.isReady = true;
       logger.info('Bot started successfully (Bot API polling mode)');
@@ -458,14 +473,16 @@ class TelegramBot {
       }
       
       const referralCode = result.rows[0].referral_code;
-      const botUsername = process.env.BOT_USERNAME || '';
-      
-      if (!botUsername) {
-        return { success: false, message: 'BOT_USERNAME not set in environment' };
+
+      // Prefer cached username from getMe; fall back to BOT_USERNAME if present; otherwise no link
+      const envBotUsername = process.env.BOT_USERNAME || '';
+      const botUsernameSource = this.botUsername || envBotUsername || '';
+
+      let referralLink = null;
+      if (botUsernameSource) {
+        referralLink = `https://t.me/${botUsernameSource}?start=ref${referralCode}`;
       }
-      
-      const referralLink = `https://t.me/${botUsername}?start=ref${referralCode}`;
-      
+
       return { success: true, referralCode, referralLink };
     } catch (error) {
       logger.error('Error getting referral link:', error);
@@ -694,12 +711,21 @@ Need more help? Contact our support team.`;
         const referralInfo = await this.getUserReferralLink(senderId);
 
         if (referralInfo.success) {
-          const referralMessage = `🔗 Your Referral Link:
+          let referralMessage = '';
+
+          if (referralInfo.referralLink) {
+            referralMessage = `🔗 Your Referral Link:
 ${referralInfo.referralLink}
 
 Your Referral Code: ${referralInfo.referralCode}
 
 Share this link with friends and earn 30 points for each new user who joins!`;
+          } else {
+            referralMessage = `🔗 Your Referral Code: ${referralInfo.referralCode}
+
+We could not detect the bot username automatically, so a direct link is not available.
+Share this code with your friends and ask them to send /start ref${referralInfo.referralCode} to the bot.`;
+          }
 
           await this.bot.sendMessage(msg.chat.id, referralMessage);
         } else {
