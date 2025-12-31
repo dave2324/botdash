@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, Save, RefreshCw, DollarSign, Crown } from 'lucide-react';
+import { Settings, Save, RefreshCw, DollarSign, Crown, MessageCircle } from 'lucide-react';
+
 import { motion } from 'framer-motion';
 import { Setting, getSettings, bulkUpdateSettings } from '@/lib/api';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Setting[]>([]);
-  const [activeTab, setActiveTab] = useState<'points' | 'premium'>('points');
+  const [activeTab, setActiveTab] = useState<'points' | 'premium' | 'welcome'>('points');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -33,7 +35,6 @@ export default function SettingsPage() {
       setting.key === key ? { ...setting, value: newValue } : setting
     ));
   };
-
 
   const saveSettings = async () => {
     try {
@@ -116,6 +117,21 @@ export default function SettingsPage() {
               </div>
             </button>
           </li>
+          <li className="mr-2">
+            <button 
+              onClick={() => setActiveTab('welcome')}
+              className={`inline-block p-4 border-b-2 ${
+                activeTab === 'welcome' 
+                  ? 'text-blue-600 border-blue-600' 
+                  : 'text-gray-500 border-transparent hover:text-gray-700'
+              } rounded-t-lg`}
+            >
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4" />
+                Welcome Message
+              </div>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -131,11 +147,65 @@ export default function SettingsPage() {
         </motion.div>
       )}
 
+      {/* Welcome Message Tab */}
+      {activeTab === 'welcome' && (
+        <div className="grid gap-4">
+          {settings
+            .filter(setting => setting.key === 'welcome_message' || setting.key === 'welcome_image_url')
+            .map((setting) => (
+              <motion.div
+                key={setting.key}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 rounded-lg bg-white shadow-sm border"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-gray-900">
+                      {setting.key.split('_').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                      ).join(' ')}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">{setting.description}</p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Last updated: {new Date(setting.updated_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 items-end min-w-[18rem] max-w-xl w-full">
+                    {setting.key === 'welcome_message' ? (
+                      <>
+                        <textarea
+                          value={String(setting.value ?? '')}
+                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                          rows={8}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                          placeholder="Example: 👋 Welcome {first_name}!\\nЗдравствуйте ,Bonjour ,Hello ,مرحباً"
+                        />
+                        <span className="text-xs text-gray-400 text-right">
+                          Variables: {'{first_name}'} {'{last_name}'} {'{username}'} {'{points}'} {'{referrer_name}'} {'{referrer_points}'}
+                        </span>
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        value={String(setting.value ?? '')}
+                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder="https://example.com/logo.png or Telegram file_id"
+                      />
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+        </div>
+      )}
+
       {/* Points Settings Tab */}
       {activeTab === 'points' && (
         <div className="grid gap-4">
           {settings
-            .filter(setting => !setting.key.startsWith('premium_'))
+            .filter(setting => !setting.key.startsWith('premium_') && !setting.key.startsWith('welcome_'))
             .map((setting) => (
             <motion.div
               key={setting.key}
@@ -156,29 +226,14 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {setting.key === 'welcome_message' ? (
-                    <textarea
-                      value={String(setting.value ?? '')}
-                      onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                      rows={6}
-                      className="w-[28rem] max-w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                      placeholder="Example: 👋 Welcome {first_name}!\\nYour points: {points}"
-                    />
-                  ) : (
-                    <input
-                      type="number"
-                      value={setting.value}
-                      onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                      className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  )}
-                  {setting.key !== 'welcome_message' && !(setting.key === 'max_math_quiz_plays_per_day' || setting.key === 'max_spin_wheel_plays_per_day') && (
+                  <input
+                    type="number"
+                    value={setting.value}
+                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                    className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {!(setting.key === 'max_math_quiz_plays_per_day' || setting.key === 'max_spin_wheel_plays_per_day') && (
                     <span className="text-sm text-gray-500">points</span>
-                  )}
-                  {setting.key === 'welcome_message' && (
-                    <span className="text-xs text-gray-400">
-                      Variables: {'{first_name}'} {'{points}'} {'{username}'} {'{referrer_name}'}
-                    </span>
                   )}
                 </div>
               </div>

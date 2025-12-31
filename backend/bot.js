@@ -600,13 +600,8 @@ class TelegramBot {
         const registrationResult = await this.registerUser(sender);
 
         // Load custom welcome message from settings (editable in admin panel)
-        const defaultWelcome = `👋 Welcome to Dashbot, ${sender.first_name || ''}!
-
-🎮 Here's what you can do:
-• Play games and earn points
-• Complete daily tasks
-• Refer friends for bonus points
-• Withdraw your earnings`;
+        // Default is empty; if you want text, set settings.welcome_message in the DB.
+        const defaultWelcome = '';
 
         let welcomeTemplate = defaultWelcome;
         try {
@@ -660,8 +655,28 @@ class TelegramBot {
             .replace(/\{(first_name|last_name|username|points|referrer_name|referrer_points)\}/g, (_, k) => vars[k] ?? '')
             .replace(/\\n/g, '\n');
 
-        const welcomeMessage = renderTemplate(welcomeTemplate);
-        await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+        const welcomeMessage = renderTemplate(welcomeTemplate).trim();
+
+        // Optionally send a welcome image (e.g. logo) before the text message
+        try {
+          const imageSetting = await pool.query(
+            "SELECT value FROM settings WHERE key = 'welcome_image_url' LIMIT 1"
+          );
+
+          const imageUrl = imageSetting.rows?.[0]?.value;
+          if (imageUrl) {
+            // This can be a public URL (https://...) or a Telegram file_id
+            await this.bot.sendPhoto(msg.chat.id, imageUrl);
+          }
+        } catch (e) {
+          // If the image setting is missing or sending fails, just log and continue
+          logger.warn('Could not load or send welcome image, sending text only', e);
+        }
+
+        // Only send a text message if we actually have content
+        if (welcomeMessage.length > 0) {
+          await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+        }
       } catch (error) {
         logger.error('Error handling start command:', error);
         // Fallback to plain message without buttons if markup fails
