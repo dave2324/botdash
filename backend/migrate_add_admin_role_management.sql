@@ -78,8 +78,6 @@ VALUES
     
     -- Finance permissions
     ('view_finances', 'View financial data', 'finances'),
-    ('manage_withdrawals', 'Approve/reject withdrawal requests', 'finances'),
-    ('view_transactions', 'View transaction logs', 'finances'),
     
     -- Settings permissions
     ('view_settings', 'View system settings', 'settings'),
@@ -106,7 +104,7 @@ FROM admin_permissions
 WHERE name IN (
     'view_tasks', 'approve_tasks', 
     'view_users', 
-    'view_finances', 'view_transactions',
+    'view_finances',
     'view_settings'
 );
 

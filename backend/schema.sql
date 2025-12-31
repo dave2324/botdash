@@ -187,11 +187,7 @@ INSERT INTO settings (key, value, description) VALUES
   ('max_math_quiz_plays_per_day', '10', 'Maximum number of times a user can play the automated math quiz per day'),
   ('premium_enabled', '1', 'Enable premium subscription feature (1 = enabled, 0 = disabled)'),
   ('premium_price', '299', 'Premium subscription price in cents'),
-  ('premium_duration_days', '30', 'Premium subscription duration in days'),
-  ('chapa_api_key', '', 'Chapa secret API key for payment processing'),
-  ('chapa_public_key', '', 'Chapa public key for payment processing'),
-  ('chapa_test_mode', '1', 'Enable test mode for Chapa payments (1 = enabled, 0 = disabled)'),
-  ('chapa_webhook_enabled', '1', 'Enable webhook processing for Chapa payments (1 = enabled, 0 = disabled)')
+  ('premium_duration_days', '30', 'Premium subscription duration in days')
 ON CONFLICT (key) DO UPDATE SET
   value = EXCLUDED.value,
   description = EXCLUDED.description;

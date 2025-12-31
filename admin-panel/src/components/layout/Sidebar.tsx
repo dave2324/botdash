@@ -30,7 +30,6 @@ const navItems = [
   { name: 'Spin Wheel', href: '/dashboard/spin-wheel', icon: 'loader', showCount: 'active' },
   { name: 'Users', href: '/dashboard/users', icon: 'users', showCount: 'active' },
   { name: 'Referrals', href: '/dashboard/referrals', icon: 'users-2', showCount: 'total' },
-  { name: 'Transactions', href: '/dashboard/transactions', icon: 'wallet' },
   { name: 'Promotion Settings', href: '/dashboard/promotion-settings', icon: 'settings' },
   { name: 'Settings', href: '/dashboard/settings', icon: 'settings' },
   

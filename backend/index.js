@@ -162,17 +162,10 @@ app.get('/theme', (req, res) => {
   res.json(appTheme);
 });
 
-// Add payments routes BEFORE authentication middleware (webhooks don't have Telegram auth)
-app.use('/api/payments', require('./api/payments'));
-
 // Protected routes using Telegram authentication (skip payments which handle their own auth)
 // NOTE: We use the wrapper middleware so missing BOT_TOKEN doesn't crash the server.
 const telegramAuth = require('./middleware/auth');
 app.use('/api', (req, res, next) => {
-  // Skip global auth for payments routes - they handle their own auth internally
-  if (req.originalUrl.startsWith('/api/payments')) {
-    return next();
-  }
   return telegramAuth(req, res, next);
 });
 
@@ -206,8 +199,6 @@ app.use('/api/promotion-costs', require('./api/promotion-costs'));
 app.use('/api/promotion-products', require('./api/promotion-products'));
 app.use('/api/promotion-submissions', require('./api/promotion-submissions'));
 
-// Add withdrawal routes (deposits are now handled in /api/payments)
-app.use('/api/withdrawals', require('./api/withdrawals'));
 
 // Add new feature routes
 app.use('/api/affiliate-tasks', require('./api/affiliate-tasks'));
@@ -216,7 +207,6 @@ app.use('/api/courses', require('./api/courses'));
 app.use('/api/checkins', require('./api/checkins'));
 app.use('/api/ads', require('./api/ads'));
 app.use('/api/leaderboard', require('./api/leaderboard'));
-app.use('/api/withdrawal-feed', require('./api/withdrawal-feed'));
 
 // User registration endpoint
 app.post('/api/user/register', async (req, res) => {

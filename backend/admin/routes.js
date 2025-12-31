@@ -72,7 +72,6 @@ if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD_HASH || !process.
 const router = express.Router();
 
 // Import sub-routers
-const transactionsRouter = require('./transactions');
 const affiliateTasksRouter = require('./affiliate-tasks');
 const coursesRouter = require('./courses');
 const localAdsRouter = require('./local-ads');
@@ -80,7 +79,6 @@ const activityLogsModule = require('./activity-logs');
 const adminUsersRouter = require('./admin-users');
 
 // Use sub-routers
-router.use('/transactions', transactionsRouter);
 router.use('/affiliate-tasks', affiliateTasksRouter);
 router.use('/courses', coursesRouter);
 router.use('/local-ads', localAdsRouter);
