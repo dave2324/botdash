@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+// Backend runs on a separate port from the Next.js dev server.
+// If NEXT_PUBLIC_API_URL is not set, default to http://localhost:3001.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // Create axios instance with default config
 const api = axios.create({

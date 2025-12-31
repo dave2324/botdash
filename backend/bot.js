@@ -571,6 +571,22 @@ class TelegramBot {
     }
   }
 
+  async logUserRequest({ sender, chatId, source, actionKey, message, payload = {} }) {
+    try {
+      // Ensure user exists
+      const reg = await this.registerUser(sender);
+      if (!reg.success) return;
+
+      await pool.query(
+        `INSERT INTO user_requests (user_id, telegram_chat_id, source, action_key, message, payload, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'open')`,
+        [reg.user.id, chatId, source, actionKey, message, JSON.stringify(payload)]
+      );
+    } catch (e) {
+      logger.error('Failed to log user request:', e);
+    }
+  }
+
   registerHandlers() {
     if (!this.bot) return;
 
@@ -582,7 +598,8 @@ class TelegramBot {
         // Register user in database
         const registrationResult = await this.registerUser(sender);
 
-        let welcomeMessage = `👋 Welcome to Dashbot, ${sender.first_name || ''}!
+        // Load custom welcome message from settings (editable in admin panel)
+        const defaultWelcome = `👋 Welcome to Dashbot, ${sender.first_name || ''}!
 
 🎮 Here's what you can do:
 • Play games and earn points
@@ -590,13 +607,24 @@ class TelegramBot {
 • Refer friends for bonus points
 • Withdraw your earnings`;
 
-        if (registrationResult.success) {
-          // Add points info to the welcome message
-          const points = registrationResult.user.points || 0;
-          welcomeMessage += `\n\nYour current points: ${points}`;
+        let welcomeTemplate = defaultWelcome;
+        try {
+          const welcomeSetting = await pool.query(
+            "SELECT value FROM settings WHERE key = 'welcome_message' LIMIT 1"
+          );
+          if (welcomeSetting.rows?.[0]?.value) welcomeTemplate = String(welcomeSetting.rows[0].value);
+        } catch (e) {
+          // If settings table/key is missing for any reason, keep default.
+          logger.warn('Could not load welcome_message setting, using default');
         }
 
-        // Check for referral code in /start params
+        // Collect variables for template replacement
+        const points = registrationResult.success ? (registrationResult.user.points || 0) : 0;
+
+        // Check for referral code in /start params (we do this before rendering so variables are available)
+        let referrerName = '';
+        let referrerPoints = '';
+
         const startParam = match && match[1] ? match[1].trim() : '';
         if (startParam && startParam.startsWith('ref')) {
           const referralCode = startParam.substring(3); // Remove 'ref' prefix
@@ -608,16 +636,30 @@ class TelegramBot {
           };
 
           const referralResult = await this.processReferral(sender.id, referralCode, userInfo);
-
           if (referralResult.success) {
-            const referrerName =
+            referrerName =
               referralResult.referrer.first_name ||
               referralResult.referrer.username ||
               'Someone';
-            welcomeMessage += `\n\n🎉 You were referred by ${referrerName}. They received ${referralResult.points} points!`;
+            referrerPoints = String(referralResult.points ?? '');
           }
         }
 
+        const vars = {
+          first_name: sender.first_name || '',
+          last_name: sender.last_name || '',
+          username: sender.username || '',
+          points: String(points),
+          referrer_name: referrerName,
+          referrer_points: referrerPoints
+        };
+
+        const renderTemplate = (tpl) =>
+          String(tpl)
+            .replace(/\{(first_name|last_name|username|points|referrer_name|referrer_points)\}/g, (_, k) => vars[k] ?? '')
+            .replace(/\\n/g, '\n');
+
+        const welcomeMessage = renderTemplate(welcomeTemplate);
         await this.bot.sendMessage(msg.chat.id, welcomeMessage);
       } catch (error) {
         logger.error('Error handling start command:', error);
@@ -630,6 +672,28 @@ class TelegramBot {
         } catch (fallbackError) {
           logger.error('Fallback message also failed:', fallbackError);
         }
+      }
+    });
+
+    // Handle /support command (creates an admin inbox request)
+    this.bot.onText(/^\/support(?:\s+(.*))?/, async (msg, match) => {
+      try {
+        const sender = msg.from;
+        const chatId = msg.chat.id;
+        const text = match && match[1] ? match[1].trim() : '';
+
+        await this.logUserRequest({
+          sender,
+          chatId,
+          source: 'command',
+          actionKey: '/support',
+          message: text || 'User requested support',
+          payload: { text }
+        });
+
+        await this.bot.sendMessage(chatId, '✅ Your support request has been sent to our admin team. We will reply here soon.');
+      } catch (error) {
+        logger.error('Error handling /support command:', error);
       }
     });
 
@@ -820,6 +884,15 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
           const lang = parts[1];
           const country = parts[2];
           const topic = parts[3];
+
+          await this.logUserRequest({
+            sender: query.from,
+            chatId,
+            source: 'callback_query',
+            actionKey: data,
+            message: `User selected topic: ${topic} (lang=${lang}, country=${country})`,
+            payload: { lang, country, topic, callback_data: data }
+          });
 
           let response = '';
 

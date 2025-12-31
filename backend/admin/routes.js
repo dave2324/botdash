@@ -83,12 +83,14 @@ const coursesRouter = require('./courses');
 const localAdsRouter = require('./local-ads');
 const activityLogsModule = require('./activity-logs');
 const adminUsersRouter = require('./admin-users');
+const userRequestsRouter = require('./user-requests');
 
 // Use sub-routers
 router.use('/affiliate-tasks', affiliateTasksRouter);
 router.use('/courses', coursesRouter);
 router.use('/local-ads', localAdsRouter);
 router.use('/staff', adminUsersRouter); // Admin users management
+router.use('/user-requests', userRequestsRouter); // Admin inbox for user requests
 router.use('/', activityLogsModule.router); // Activity logs routes
 
 // Simple bulk messaging endpoint

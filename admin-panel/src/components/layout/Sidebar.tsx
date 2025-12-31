@@ -31,6 +31,7 @@ const navItems = [
   { name: 'Users', href: '/dashboard/users', icon: 'users', showCount: 'active' },
   { name: 'Referrals', href: '/dashboard/referrals', icon: 'users-2', showCount: 'total' },
   { name: 'Promotion Settings', href: '/dashboard/promotion-settings', icon: 'settings' },
+  { name: 'User Requests', href: '/dashboard/user-requests', icon: 'message-circle', showCount: 'pending' },
   { name: 'Settings', href: '/dashboard/settings', icon: 'settings' },
   
   // System Administration section

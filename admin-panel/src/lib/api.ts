@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+// Backend runs on a separate port from the Next.js dev server.
+// If NEXT_PUBLIC_API_URL is not set, default to http://localhost:3001.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -575,6 +577,24 @@ export interface Setting {
   value: string | number; // Changed to support both string and number values
   description: string;
   updated_at: string;
+}
+
+export interface UserRequest {
+  id: number;
+  user_id: number;
+  telegram_chat_id: number;
+  source: string;
+  action_key: string;
+  message: string;
+  payload: any;
+  status: 'open' | 'in_progress' | 'closed';
+  admin_reply?: string;
+  replied_at?: string;
+  created_at: string;
+  updated_at: string;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 export interface SettingsResponse {

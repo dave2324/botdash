@@ -156,14 +156,29 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={setting.value}
-                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                    className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  {!(setting.key === 'max_math_quiz_plays_per_day' || setting.key === 'max_spin_wheel_plays_per_day') && (
+                  {setting.key === 'welcome_message' ? (
+                    <textarea
+                      value={String(setting.value ?? '')}
+                      onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                      rows={6}
+                      className="w-[28rem] max-w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                      placeholder="Example: 👋 Welcome {first_name}!\\nYour points: {points}"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      value={setting.value}
+                      onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                      className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  )}
+                  {setting.key !== 'welcome_message' && !(setting.key === 'max_math_quiz_plays_per_day' || setting.key === 'max_spin_wheel_plays_per_day') && (
                     <span className="text-sm text-gray-500">points</span>
+                  )}
+                  {setting.key === 'welcome_message' && (
+                    <span className="text-xs text-gray-400">
+                      Variables: {'{first_name}'} {'{points}'} {'{username}'} {'{referrer_name}'}
+                    </span>
                   )}
                 </div>
               </div>
