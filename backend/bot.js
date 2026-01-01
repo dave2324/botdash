@@ -47,6 +47,9 @@ class TelegramBot {
       // Setup channel membership verification scheduler
       this.setupChannelVerificationScheduler();
 
+      // Wrap send methods so every outbound message is logged to DB.
+      this.wrapOutboundSendMethods();
+
       // Register message handlers
       this.registerHandlers();
     } catch (error) {
@@ -592,6 +595,238 @@ class TelegramBot {
     }
   }
 
+  // --- Conversation Inbox (all messages) ---
+  async ensureConversation({ chatId, sender }) {
+    // Make sure the user exists first (so we can link conversation.user_id)
+    let userId = null;
+    try {
+      if (sender) {
+        const reg = await this.registerUser(sender);
+        if (reg && reg.success && reg.user && reg.user.id) userId = reg.user.id;
+      }
+    } catch (e) {
+      // Ignore registration errors for logging purposes
+    }
+
+    const result = await pool.query(
+      `INSERT INTO conversations (telegram_chat_id, user_id, status, created_at, updated_at)
+       VALUES ($1, $2, 'open', NOW(), NOW())
+       ON CONFLICT (telegram_chat_id)
+       DO UPDATE SET user_id = COALESCE(conversations.user_id, EXCLUDED.user_id), updated_at = NOW()
+       RETURNING *`,
+      [chatId, userId]
+    );
+
+    return result.rows[0];
+  }
+
+  extractMessageInfo(msg) {
+    // Returns normalized message info for DB
+    const base = {
+      telegram_message_id: msg && msg.message_id ? msg.message_id : null,
+      telegram_reply_to_message_id: msg && msg.reply_to_message && msg.reply_to_message.message_id ? msg.reply_to_message.message_id : null,
+      sender_telegram_user_id: msg && msg.from && msg.from.id ? msg.from.id : null,
+      type: 'unknown',
+      text: null,
+      file_id: null,
+      file_unique_id: null,
+      file_name: null,
+      mime_type: null,
+      file_size: null,
+      media_duration: null,
+      payload: {}
+    };
+
+    if (!msg) return base;
+
+    // Text
+    if (typeof msg.text === 'string' && msg.text.length > 0) {
+      base.type = 'text';
+      base.text = msg.text;
+      return base;
+    }
+
+    // Photo (array of sizes)
+    if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+      const best = msg.photo[msg.photo.length - 1];
+      base.type = 'photo';
+      base.text = msg.caption || null;
+      base.file_id = best.file_id || null;
+      base.file_unique_id = best.file_unique_id || null;
+      base.file_size = best.file_size || null;
+      return base;
+    }
+
+    // Video
+    if (msg.video) {
+      base.type = 'video';
+      base.text = msg.caption || null;
+      base.file_id = msg.video.file_id || null;
+      base.file_unique_id = msg.video.file_unique_id || null;
+      base.file_size = msg.video.file_size || null;
+      base.mime_type = msg.video.mime_type || null;
+      base.media_duration = msg.video.duration || null;
+      return base;
+    }
+
+    // Audio
+    if (msg.audio) {
+      base.type = 'audio';
+      base.text = msg.caption || null;
+      base.file_id = msg.audio.file_id || null;
+      base.file_unique_id = msg.audio.file_unique_id || null;
+      base.file_size = msg.audio.file_size || null;
+      base.mime_type = msg.audio.mime_type || null;
+      base.file_name = msg.audio.file_name || null;
+      base.media_duration = msg.audio.duration || null;
+      return base;
+    }
+
+    // Voice
+    if (msg.voice) {
+      base.type = 'voice';
+      base.text = msg.caption || null;
+      base.file_id = msg.voice.file_id || null;
+      base.file_unique_id = msg.voice.file_unique_id || null;
+      base.file_size = msg.voice.file_size || null;
+      base.mime_type = msg.voice.mime_type || null;
+      base.media_duration = msg.voice.duration || null;
+      return base;
+    }
+
+    // Document
+    if (msg.document) {
+      base.type = 'document';
+      base.text = msg.caption || null;
+      base.file_id = msg.document.file_id || null;
+      base.file_unique_id = msg.document.file_unique_id || null;
+      base.file_size = msg.document.file_size || null;
+      base.mime_type = msg.document.mime_type || null;
+      base.file_name = msg.document.file_name || null;
+      return base;
+    }
+
+    // Sticker
+    if (msg.sticker) {
+      base.type = 'sticker';
+      base.file_id = msg.sticker.file_id || null;
+      base.file_unique_id = msg.sticker.file_unique_id || null;
+      base.file_size = msg.sticker.file_size || null;
+      base.mime_type = msg.sticker.mime_type || null;
+      return base;
+    }
+
+    // Fallback: store some metadata
+    base.payload = {
+      has_caption: !!msg.caption,
+      date: msg.date,
+      entities: msg.entities || null
+    };
+
+    return base;
+  }
+
+  async logConversationMessage({ chatId, sender, direction, msg }) {
+    try {
+      if (!chatId) return;
+
+      const conversation = await this.ensureConversation({ chatId, sender });
+      if (!conversation || !conversation.id) return;
+
+      const info = this.extractMessageInfo(msg);
+
+      // Insert message row
+      await pool.query(
+        `INSERT INTO conversation_messages (
+          conversation_id,
+          direction,
+          telegram_message_id,
+          telegram_reply_to_message_id,
+          sender_telegram_user_id,
+          type,
+          text,
+          file_id,
+          file_unique_id,
+          file_name,
+          mime_type,
+          file_size,
+          media_duration,
+          payload,
+          created_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW()
+        )`,
+        [
+          conversation.id,
+          direction,
+          info.telegram_message_id,
+          info.telegram_reply_to_message_id,
+          info.sender_telegram_user_id,
+          info.type,
+          info.text,
+          info.file_id,
+          info.file_unique_id,
+          info.file_name,
+          info.mime_type,
+          info.file_size,
+          info.media_duration,
+          JSON.stringify(info.payload || {})
+        ]
+      );
+
+      // Update conversation summary
+      const preview = (info.text && String(info.text).trim())
+        ? String(info.text).trim().slice(0, 280)
+        : (info.type ? `[${info.type}]` : '[message]');
+
+      await pool.query(
+        `UPDATE conversations
+         SET last_message_at = NOW(),
+             last_message_preview = $2,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [conversation.id, preview]
+      );
+    } catch (e) {
+      // Logging must never crash bot
+      logger.error('Failed to log conversation message:', e);
+    }
+  }
+
+  wrapOutboundSendMethods() {
+    if (!this.bot || this.bot.__inboxWrapped) return;
+    this.bot.__inboxWrapped = true;
+
+    const wrap = (methodName, typeHint) => {
+      const original = this.bot[methodName];
+      if (typeof original !== 'function') return;
+
+      this.bot[methodName] = async (...args) => {
+        const chatId = args && args.length > 0 ? args[0] : null;
+        try {
+          const sent = await original.apply(this.bot, args);
+          // Log outbound using the returned Telegram message object
+          await this.logConversationMessage({
+            chatId,
+            sender: null,
+            direction: 'outbound',
+            msg: sent
+          });
+          return sent;
+        } catch (err) {
+          throw err;
+        }
+      };
+    };
+
+    wrap('sendMessage', 'text');
+    wrap('sendPhoto', 'photo');
+    wrap('sendVideo', 'video');
+    wrap('sendAudio', 'audio');
+    wrap('sendVoice', 'voice');
+    wrap('sendDocument', 'document');
+  }
+
   async getSettingValue(key) {
     const res = await pool.query('SELECT value FROM settings WHERE key = $1 LIMIT 1', [key]);
     return res.rows?.[0]?.value ?? null;
@@ -696,6 +931,25 @@ class TelegramBot {
 
   registerHandlers() {
     if (!this.bot) return;
+
+    // Log ALL inbound messages (text + media + commands) to the conversation inbox.
+    // This runs in addition to other handlers (onboarding, commands, etc.).
+    this.bot.on('message', async (msg) => {
+      try {
+        if (!msg || !msg.chat) return;
+        // Ignore messages from bots (optional)
+        if (msg.from && msg.from.is_bot) return;
+
+        await this.logConversationMessage({
+          chatId: msg.chat.id,
+          sender: msg.from,
+          direction: 'inbound',
+          msg
+        });
+      } catch (e) {
+        // keep silent
+      }
+    });
 
     // Handle /start command with error recovery
     this.bot.onText(/^\/start(?:\s+(.*))?/, async (msg, match) => {

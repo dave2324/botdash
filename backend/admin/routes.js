@@ -84,6 +84,7 @@ const localAdsRouter = require('./local-ads');
 const activityLogsModule = require('./activity-logs');
 const adminUsersRouter = require('./admin-users');
 const userRequestsRouter = require('./user-requests');
+const inboxRouter = require('./inbox');
 
 // Use sub-routers
 router.use('/affiliate-tasks', affiliateTasksRouter);
@@ -91,6 +92,7 @@ router.use('/courses', coursesRouter);
 router.use('/local-ads', localAdsRouter);
 router.use('/staff', adminUsersRouter); // Admin users management
 router.use('/user-requests', userRequestsRouter); // Admin inbox for user requests
+router.use('/inbox', inboxRouter); // Full conversation inbox
 router.use('/', activityLogsModule.router); // Activity logs routes
 
 // Helper: send message/photo/video to a single user
