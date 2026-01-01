@@ -9,6 +9,10 @@ class TelegramBot {
     this.bot = null;
     this.isReady = false;
     this.botUsername = null; // cached from getMe()
+
+    // In-memory conversation states (onboarding, etc.)
+    // Map<chatId, { mode: 'onboarding', questionIndex: number, questions: any[] }>
+    this.chatStates = new Map();
   }
 
   async start() {
@@ -588,6 +592,108 @@ class TelegramBot {
     }
   }
 
+  async getSettingValue(key) {
+    const res = await pool.query('SELECT value FROM settings WHERE key = $1 LIMIT 1', [key]);
+    return res.rows?.[0]?.value ?? null;
+  }
+
+  async getSettingJson(key, fallback) {
+    try {
+      const raw = await this.getSettingValue(key);
+      if (raw === null || raw === undefined || String(raw).trim() === '') return fallback;
+      return JSON.parse(String(raw));
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  async getDefaultLanguage() {
+    const def = await this.getSettingValue('default_language');
+    return (def && String(def).trim()) ? String(def).trim() : 'en';
+  }
+
+  async getUserLanguage(userId, senderFallbackLang) {
+    try {
+      const res = await pool.query('SELECT language_code FROM telegram_users WHERE id = $1 LIMIT 1', [parseInt(userId, 10)]);
+      const dbLang = res.rows?.[0]?.language_code;
+      if (dbLang) return String(dbLang);
+    } catch (e) {
+      // ignore
+    }
+
+    if (senderFallbackLang) return String(senderFallbackLang);
+    return await this.getDefaultLanguage();
+  }
+
+  async getOnboardingQuestions() {
+    const res = await pool.query(
+      `SELECT * FROM onboarding_questions WHERE is_active = TRUE ORDER BY sort_order ASC, id ASC`
+    );
+    return res.rows || [];
+  }
+
+  getTranslation(obj, lang, fallback = '') {
+    if (!obj) return fallback;
+    if (typeof obj === 'string') return obj;
+    if (obj[lang]) return obj[lang];
+    if (obj.en) return obj.en;
+    const first = Object.values(obj)[0];
+    return typeof first === 'string' ? first : fallback;
+  }
+
+  async startOnboarding(chatId, sender, userLang) {
+    const questions = await this.getOnboardingQuestions();
+    if (!questions.length) {
+      await pool.query('UPDATE telegram_users SET onboarding_completed = TRUE WHERE id = $1', [parseInt(sender.id, 10)]).catch(() => {});
+      return;
+    }
+
+    this.chatStates.set(chatId, { mode: 'onboarding', questionIndex: 0, questions, lang: userLang, userId: parseInt(sender.id, 10) });
+    await this.askNextOnboardingQuestion(chatId);
+  }
+
+  async askNextOnboardingQuestion(chatId) {
+    const st = this.chatStates.get(chatId);
+    if (!st || st.mode !== 'onboarding') return;
+
+    const { questionIndex, questions, lang } = st;
+
+    if (questionIndex >= questions.length) {
+      // Done
+      this.chatStates.delete(chatId);
+      await pool.query('UPDATE telegram_users SET onboarding_completed = TRUE WHERE id = $1', [st.userId]).catch(() => {});
+      await this.bot.sendMessage(chatId, '✅ Thank you!');
+      return;
+    }
+
+    const q = questions[questionIndex];
+    const questionText = this.getTranslation(q.question_translations, lang, '');
+
+    if (q.type === 'single_choice' && q.options_translations) {
+      const optionsByLang = q.options_translations?.[lang] || q.options_translations?.en || {};
+      const inline_keyboard = Object.entries(optionsByLang).map(([key, label]) => ([{ text: String(label), callback_data: `onb:${q.id}:${key}` }]));
+
+      await this.bot.sendMessage(chatId, questionText || 'Please choose:', {
+        reply_markup: { inline_keyboard }
+      });
+      return;
+    }
+
+    // default: text
+    await this.bot.sendMessage(chatId, questionText || 'Please type your answer:');
+  }
+
+  async saveOnboardingAnswer(userId, questionId, payload) {
+    const { answer_text, answer_option_key } = payload;
+    await pool.query(
+      `INSERT INTO onboarding_answers (user_id, question_id, answer_text, answer_option_key)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, question_id)
+       DO UPDATE SET answer_text = EXCLUDED.answer_text, answer_option_key = EXCLUDED.answer_option_key, created_at = NOW()`,
+      [userId, questionId, answer_text || null, answer_option_key || null]
+    );
+  }
+
   registerHandlers() {
     if (!this.bot) return;
 
@@ -599,20 +705,14 @@ class TelegramBot {
         // Register user in database
         const registrationResult = await this.registerUser(sender);
 
-        // Load custom welcome message from settings (editable in admin panel)
-        // Default is empty; if you want text, set settings.welcome_message in the DB.
-        const defaultWelcome = '';
+        // Determine user's language (DB language_code > Telegram language_code > default_language)
+        // NOTE: language is still useful for onboarding question translations.
+        const userLang = await this.getUserLanguage(sender.id, sender.language_code);
 
-        let welcomeTemplate = defaultWelcome;
-        try {
-          const welcomeSetting = await pool.query(
-            "SELECT value FROM settings WHERE key = 'welcome_message' LIMIT 1"
-          );
-          if (welcomeSetting.rows?.[0]?.value) welcomeTemplate = String(welcomeSetting.rows[0].value);
-        } catch (e) {
-          // If settings table/key is missing for any reason, keep default.
-          logger.warn('Could not load welcome_message setting, using default');
-        }
+        // Plain welcome settings (NO template variables)
+        const welcomeText = String((await this.getSettingValue('welcome_text')) ?? '').trim();
+        const welcomeImage = String((await this.getSettingValue('welcome_image_url')) ?? '').trim() || null;
+        const welcomeVideo = String((await this.getSettingValue('welcome_video_url')) ?? '').trim() || null;
 
         // Collect variables for template replacement
         const points = registrationResult.success ? (registrationResult.user.points || 0) : 0;
@@ -641,41 +741,43 @@ class TelegramBot {
           }
         }
 
-        const vars = {
-          first_name: sender.first_name || '',
-          last_name: sender.last_name || '',
-          username: sender.username || '',
-          points: String(points),
-          referrer_name: referrerName,
-          referrer_points: referrerPoints
-        };
+        const welcomeMessage = welcomeText;
 
-        const renderTemplate = (tpl) =>
-          String(tpl)
-            .replace(/\{(first_name|last_name|username|points|referrer_name|referrer_points)\}/g, (_, k) => vars[k] ?? '')
-            .replace(/\\n/g, '\n');
-
-        const welcomeMessage = renderTemplate(welcomeTemplate).trim();
-
-        // Optionally send a welcome image (e.g. logo) before the text message
-        try {
-          const imageSetting = await pool.query(
-            "SELECT value FROM settings WHERE key = 'welcome_image_url' LIMIT 1"
-          );
-
-          const imageUrl = imageSetting.rows?.[0]?.value;
-          if (imageUrl) {
-            // This can be a public URL (https://...) or a Telegram file_id
-            await this.bot.sendPhoto(msg.chat.id, imageUrl);
+        // Optionally send a welcome video first
+        if (welcomeVideo) {
+          try {
+            await this.bot.sendVideo(msg.chat.id, welcomeVideo);
+          } catch (e) {
+            logger.warn('Could not send welcome video', e);
           }
-        } catch (e) {
-          // If the image setting is missing or sending fails, just log and continue
-          logger.warn('Could not load or send welcome image, sending text only', e);
         }
 
-        // Only send a text message if we actually have content
+        // Optionally send a welcome image
+        if (welcomeImage) {
+          try {
+            await this.bot.sendPhoto(msg.chat.id, welcomeImage);
+          } catch (e) {
+            logger.warn('Could not send welcome image', e);
+          }
+        }
+
+        // Send plain welcome text
         if (welcomeMessage.length > 0) {
           await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+        }
+
+        // Start onboarding questions (if not completed)
+        try {
+          const onboardingRes = await pool.query(
+            'SELECT onboarding_completed FROM telegram_users WHERE id = $1 LIMIT 1',
+            [parseInt(sender.id, 10)]
+          );
+          const done = !!onboardingRes.rows?.[0]?.onboarding_completed;
+          if (!done) {
+            await this.startOnboarding(msg.chat.id, sender, userLang);
+          }
+        } catch (e) {
+          // If onboarding tables/column aren't present, ignore
         }
       } catch (error) {
         logger.error('Error handling start command:', error);
@@ -688,6 +790,31 @@ class TelegramBot {
         } catch (fallbackError) {
           logger.error('Fallback message also failed:', fallbackError);
         }
+      }
+    });
+
+    // Capture onboarding answers (text)
+    this.bot.on('message', async (msg) => {
+      try {
+        // Ignore commands
+        if (!msg || !msg.chat || !msg.text || String(msg.text).startsWith('/')) return;
+
+        const chatId = msg.chat.id;
+        const st = this.chatStates.get(chatId);
+        if (!st || st.mode !== 'onboarding') return;
+
+        const q = st.questions[st.questionIndex];
+        if (!q) return;
+
+        // Save answer
+        await this.saveOnboardingAnswer(st.userId, q.id, { answer_text: String(msg.text) });
+
+        // Next
+        st.questionIndex += 1;
+        this.chatStates.set(chatId, st);
+        await this.askNextOnboardingQuestion(chatId);
+      } catch (e) {
+        // keep silent
       }
     });
 
@@ -853,8 +980,23 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
         const data = query.data || '';
         const chatId = query.message.chat.id;
 
+        // Onboarding (single_choice)
+        if (data.startsWith('onb:')) {
+          const parts = data.split(':');
+          const questionId = parseInt(parts[1], 10);
+          const optionKey = parts[2];
+
+          const st = this.chatStates.get(chatId);
+          if (st && st.mode === 'onboarding') {
+            await this.saveOnboardingAnswer(st.userId, questionId, { answer_option_key: optionKey });
+            st.questionIndex += 1;
+            this.chatStates.set(chatId, st);
+            await this.askNextOnboardingQuestion(chatId);
+          }
+        }
+
         // Step 1: language selected -> ask for country (keep previous row)
-        if (data.startsWith('lang:')) {
+        else if (data.startsWith('lang:')) {
           const lang = data.split(':')[1];
 
           await this.bot.sendMessage(chatId, 'Please select a country:', {

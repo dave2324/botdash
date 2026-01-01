@@ -1494,6 +1494,72 @@ export interface UploadResponse {
   mimeType: string;
 }
 
+export interface BroadcastMediaRequest {
+  message?: string;
+  parse_mode?: 'HTML' | 'Markdown';
+  media_url?: string;
+  media_type?: 'photo' | 'video';
+  target?: 'all' | 'premium' | 'non_banned';
+}
+
+export interface OnboardingQuestion {
+  id: number;
+  code: string;
+  is_active: boolean;
+  trigger: 'on_start';
+  question_translations: Record<string, string>;
+  type: 'text' | 'single_choice';
+  options_translations?: Record<string, Record<string, string>> | null;
+  required: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingAnswer {
+  id: number;
+  user_id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+  question_code: string;
+  question_type: string;
+  answer_text?: string | null;
+  answer_option_key?: string | null;
+  created_at: string;
+}
+
+export const broadcastMedia = async (payload: BroadcastMediaRequest): Promise<{ sent: number; failed: number; total: number }> => {
+  const response = await api.post('/admin/broadcast-media', payload);
+  return response.data;
+};
+
+export const getOnboardingQuestions = async (): Promise<{ questions: OnboardingQuestion[] }> => {
+  const response = await api.get('/admin/onboarding/questions');
+  return response.data;
+};
+
+export const createOnboardingQuestion = async (payload: Partial<OnboardingQuestion> & { code: string }): Promise<{ question: OnboardingQuestion }> => {
+  const response = await api.post('/admin/onboarding/questions', payload);
+  return response.data;
+};
+
+export const updateOnboardingQuestion = async (id: number, payload: Partial<OnboardingQuestion>): Promise<{ question: OnboardingQuestion }> => {
+  const response = await api.put(`/admin/onboarding/questions/${id}`, payload);
+  return response.data;
+};
+
+export const deleteOnboardingQuestion = async (id: number): Promise<{ message: string; id: number }> => {
+  const response = await api.delete(`/admin/onboarding/questions/${id}`);
+  return response.data;
+};
+
+export const getOnboardingAnswers = async (): Promise<{ answers: OnboardingAnswer[] }> => {
+  const response = await api.get('/admin/onboarding/answers');
+  return response.data;
+};
+
 export const uploadFile = async (file: File, folder?: string): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append('file', file);

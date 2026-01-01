@@ -93,7 +93,55 @@ router.use('/staff', adminUsersRouter); // Admin users management
 router.use('/user-requests', userRequestsRouter); // Admin inbox for user requests
 router.use('/', activityLogsModule.router); // Activity logs routes
 
-// Simple bulk messaging endpoint
+// Helper: send message/photo/video to a single user
+const sendBotBroadcast = async (userId, payload) => {
+  try {
+    const bot = await createBot();
+    if (!bot || !bot.bot) {
+      console.error('Bot instance not ready for notifications');
+      return false;
+    }
+
+    const {
+      message,
+      parse_mode = 'HTML',
+      media_url,
+      media_type
+    } = payload;
+
+    // Media optional
+    if (media_url && media_type) {
+      if (media_type === 'photo') {
+        await bot.bot.sendPhoto(userId, media_url, {
+          caption: message || undefined,
+          parse_mode
+        });
+        return true;
+      }
+
+      if (media_type === 'video') {
+        await bot.bot.sendVideo(userId, media_url, {
+          caption: message || undefined,
+          parse_mode
+        });
+        return true;
+      }
+
+      // Unknown media type
+      return false;
+    }
+
+    // Text only
+    if (!message) return false;
+    await bot.bot.sendMessage(userId, message, { parse_mode });
+    return true;
+  } catch (error) {
+    console.error('Error sending broadcast message:', error);
+    return false;
+  }
+};
+
+// Simple bulk messaging endpoint (text only)
 // POST /admin/broadcast
 // Body: { message: string, target?: 'all' | 'premium' | 'non_banned' }
 router.post('/broadcast', adminAuth, async (req, res) => {
@@ -149,6 +197,220 @@ router.post('/broadcast', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('Error in /admin/broadcast:', error);
     return res.status(500).json({ message: 'Server error while broadcasting' });
+  }
+});
+
+// Rich broadcast endpoint (text + photo/video)
+// POST /admin/broadcast-media
+// Body: { message?: string, parse_mode?: 'HTML'|'Markdown', media_url?: string, media_type?: 'photo'|'video', target?: 'all'|'premium'|'non_banned' }
+router.post('/broadcast-media', adminAuth, async (req, res) => {
+  try {
+    const {
+      message,
+      parse_mode,
+      media_url,
+      media_type,
+      target = 'all'
+    } = req.body || {};
+
+    const hasText = typeof message === 'string' && message.trim().length > 0;
+    const hasMedia = typeof media_url === 'string' && media_url.trim().length > 0 && (media_type === 'photo' || media_type === 'video');
+
+    if (!hasText && !hasMedia) {
+      return res.status(400).json({
+        message: 'Provide message and/or media_url with media_type (photo|video)'
+      });
+    }
+
+    // Build basic filter
+    let where = 'TRUE';
+    if (target === 'premium') {
+      where = 'is_premium = TRUE AND is_banned = FALSE';
+    } else if (target === 'non_banned') {
+      where = 'is_banned = FALSE';
+    }
+
+    const usersResult = await pool.query(`SELECT id FROM telegram_users WHERE ${where}`);
+    const userIds = usersResult.rows.map((u) => u.id);
+
+    if (userIds.length === 0) {
+      return res.status(200).json({
+        sent: 0,
+        failed: 0,
+        message: 'No users matched the selected filter'
+      });
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const id of userIds) {
+      const ok = await sendBotBroadcast(id, {
+        message: hasText ? message : '',
+        parse_mode: parse_mode || 'HTML',
+        media_url: hasMedia ? media_url : undefined,
+        media_type: hasMedia ? media_type : undefined
+      });
+
+      if (ok) sent++;
+      else failed++;
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return res.status(200).json({
+      sent,
+      failed,
+      total: userIds.length
+    });
+  } catch (error) {
+    console.error('Error in /admin/broadcast-media:', error);
+    return res.status(500).json({ message: 'Server error while broadcasting media' });
+  }
+});
+
+// --- ONBOARDING QUESTIONS ---
+
+router.get('/onboarding/questions', adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM onboarding_questions ORDER BY sort_order ASC, id ASC`
+    );
+    res.json({ questions: result.rows });
+  } catch (error) {
+    console.error('Error fetching onboarding questions:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/onboarding/questions', adminAuth, async (req, res) => {
+  try {
+    const {
+      code,
+      is_active = true,
+      trigger = 'on_start',
+      question_translations = {},
+      type = 'text',
+      options_translations = null,
+      required = true,
+      sort_order = 0
+    } = req.body || {};
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ message: 'code is required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO onboarding_questions
+        (code, is_active, trigger, question_translations, type, options_translations, required, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [
+        code,
+        !!is_active,
+        trigger,
+        JSON.stringify(question_translations),
+        type,
+        options_translations ? JSON.stringify(options_translations) : null,
+        !!required,
+        Number(sort_order) || 0
+      ]
+    );
+
+    res.status(201).json({ question: result.rows[0] });
+  } catch (error) {
+    console.error('Error creating onboarding question:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/onboarding/questions/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      code,
+      is_active,
+      trigger,
+      question_translations,
+      type,
+      options_translations,
+      required,
+      sort_order
+    } = req.body || {};
+
+    const result = await pool.query(
+      `UPDATE onboarding_questions
+       SET code = COALESCE($1, code),
+           is_active = COALESCE($2, is_active),
+           trigger = COALESCE($3, trigger),
+           question_translations = COALESCE($4, question_translations),
+           type = COALESCE($5, type),
+           options_translations = $6,
+           required = COALESCE($7, required),
+           sort_order = COALESCE($8, sort_order),
+           updated_at = NOW()
+       WHERE id = $9
+       RETURNING *`,
+      [
+        code ?? null,
+        is_active === undefined ? null : !!is_active,
+        trigger ?? null,
+        question_translations === undefined ? null : JSON.stringify(question_translations),
+        type ?? null,
+        options_translations === undefined ? null : (options_translations ? JSON.stringify(options_translations) : null),
+        required === undefined ? null : !!required,
+        sort_order === undefined ? null : Number(sort_order),
+        id
+      ]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Question not found' });
+    res.json({ question: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating onboarding question:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/onboarding/questions/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('DELETE FROM onboarding_questions WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Question not found' });
+    res.json({ message: 'Deleted', id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting onboarding question:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// View answers summary (admin)
+router.get('/onboarding/answers', adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         a.id,
+         a.user_id,
+         u.username,
+         u.first_name,
+         u.last_name,
+         u.language_code,
+         q.code as question_code,
+         q.type as question_type,
+         a.answer_text,
+         a.answer_option_key,
+         a.created_at
+       FROM onboarding_answers a
+       JOIN telegram_users u ON u.id = a.user_id
+       JOIN onboarding_questions q ON q.id = a.question_id
+       ORDER BY a.created_at DESC
+       LIMIT 500`
+    );
+
+    res.json({ answers: result.rows });
+  } catch (error) {
+    console.error('Error fetching onboarding answers:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
