@@ -68,13 +68,6 @@ const sendBotNotification = async (userId, message) => {
   }
 };
 
-// Hardcoded admin credentials for development/demo use
-// NOTE: Do NOT use this in production. Replace with proper env/DB based auth.
-const HARDCODED_ADMIN = {
-  username: 'superadmin',
-  password: '!FDC=xy1@0XDaTw'
-};
-
 const router = express.Router();
 
 // Import sub-routers
@@ -416,25 +409,46 @@ router.get('/onboarding/answers', adminAuth, async (req, res) => {
   }
 });
 
-// Admin login endpoint (hardcoded credentials for now)
+// Admin login endpoint (env-based credentials)
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
 
-    // Simple hardcoded check
-    if (username !== HARDCODED_ADMIN.username || password !== HARDCODED_ADMIN.password) {
+    const envUsername = process.env.ADMIN_USERNAME;
+    const envPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    const jwtSecret = process.env.ADMIN_JWT_SECRET || 'dev-admin-secret';
+
+    if (!envUsername || !envPasswordHash) {
+      console.error('ADMIN_USERNAME or ADMIN_PASSWORD_HASH not set in environment');
+      return res.status(500).json({ message: 'Admin authentication is not configured on the server.' });
+    }
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
+
+    // Validate against env-based credentials
+    const usernameMatches = username === envUsername;
+    let passwordMatches = false;
+
+    try {
+      // Treat ADMIN_PASSWORD_HASH as a bcrypt hash
+      passwordMatches = await bcrypt.compare(password, envPasswordHash);
+    } catch (e) {
+      console.error('Error comparing admin password hash:', e);
+      return res.status(500).json({ message: 'Server error during password verification' });
+    }
+
+    if (!usernameMatches || !passwordMatches) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const userData = {
       id: 0,
-      username: HARDCODED_ADMIN.username,
+      username: envUsername,
       role_name: 'superadmin',
       is_legacy: true
     };
-
-    // Use env secret if provided, otherwise fall back to a dev-only default
-    const jwtSecret = process.env.ADMIN_JWT_SECRET || 'dev-admin-secret';
 
     // Generate JWT token with user info
     const token = jwt.sign(
