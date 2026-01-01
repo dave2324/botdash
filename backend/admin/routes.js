@@ -414,12 +414,13 @@ router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body || {};
 
-    const envUsername = process.env.ADMIN_USERNAME;
-    const envPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    // Use DEFAULT_ADMIN_* variables with plain-text password as requested
+    const envUsername = process.env.DEFAULT_ADMIN_USERNAME;
+    const envPassword = process.env.DEFAULT_ADMIN_PASSWORD;
     const jwtSecret = process.env.ADMIN_JWT_SECRET || 'dev-admin-secret';
 
-    if (!envUsername || !envPasswordHash) {
-      console.error('ADMIN_USERNAME or ADMIN_PASSWORD_HASH not set in environment');
+    if (!envUsername || !envPassword) {
+      console.error('DEFAULT_ADMIN_USERNAME or DEFAULT_ADMIN_PASSWORD not set in environment');
       return res.status(500).json({ message: 'Admin authentication is not configured on the server.' });
     }
 
@@ -427,17 +428,9 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    // Validate against env-based credentials
+    // Validate against env-based credentials (plain-text comparison)
     const usernameMatches = username === envUsername;
-    let passwordMatches = false;
-
-    try {
-      // Treat ADMIN_PASSWORD_HASH as a bcrypt hash
-      passwordMatches = await bcrypt.compare(password, envPasswordHash);
-    } catch (e) {
-      console.error('Error comparing admin password hash:', e);
-      return res.status(500).json({ message: 'Server error during password verification' });
-    }
+    const passwordMatches = password === envPassword;
 
     if (!usernameMatches || !passwordMatches) {
       return res.status(401).json({ message: 'Invalid credentials' });
