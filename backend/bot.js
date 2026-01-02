@@ -2,6 +2,7 @@ const TelegramBotApi = require('node-telegram-bot-api');
 const path = require('path');
 const { logger } = require('./config/logger');
 const pool = require('./config/database'); // shared DB pool (used by /start welcome_message lookup, etc.)
+const { FlowEngine } = require('./flow/flow-engine');
 
 class TelegramBot {
   constructor(botToken) {
@@ -13,6 +14,9 @@ class TelegramBot {
     // In-memory conversation states (onboarding, etc.)
     // Map<chatId, { mode: 'onboarding', questionIndex: number, questions: any[] }>
     this.chatStates = new Map();
+
+    // Persisted decision-tree flows
+    this.flow = null;
   }
 
   async start() {
@@ -42,6 +46,10 @@ class TelegramBot {
       }
 
       this.isReady = true;
+
+      // Initialize flow engine (uses Postgres for persistence)
+      this.flow = new FlowEngine({ pool, bot: this.bot, logger });
+
       logger.info('Bot started successfully (Bot API polling mode)');
 
       // Setup channel membership verification scheduler
@@ -1047,13 +1055,26 @@ class TelegramBot {
       }
     });
 
-    // Capture onboarding answers (text)
+    // Capture onboarding answers (text) and flow text answers
     this.bot.on('message', async (msg) => {
       try {
         // Ignore commands
         if (!msg || !msg.chat || !msg.text || String(msg.text).startsWith('/')) return;
 
         const chatId = msg.chat.id;
+
+        // If a flow session exists, treat text as the answer for the current text node
+        // (single_choice nodes use callback_query).
+        if (this.flow) {
+          const session = await this.flow.getSession(chatId);
+          if (session) {
+            const sender = msg.from;
+            const userLang = await this.getUserLanguage(sender.id, sender.language_code);
+            await this.flow.transition({ chatId, lang: userLang || 'en', answer: String(msg.text) });
+            return;
+          }
+        }
+
         const st = this.chatStates.get(chatId);
         if (!st || st.mode !== 'onboarding') return;
 
@@ -1069,6 +1090,22 @@ class TelegramBot {
         await this.askNextOnboardingQuestion(chatId);
       } catch (e) {
         // keep silent
+      }
+    });
+
+    // Start a decision-tree flow (example: /flow)
+    this.bot.onText(/^\/flow(?:\s+(.*))?/, async (msg, match) => {
+      try {
+        const chatId = msg.chat.id;
+        const sender = msg.from;
+        const userLang = await this.getUserLanguage(sender.id, sender.language_code);
+
+        // Choose which flow to run. Default: service_flow (backend/flows/service_flow.json)
+        const flowId = (process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
+        await this.flow.startFlow({ chatId, userId: parseInt(sender.id, 10), flowId, lang: userLang || 'en' });
+      } catch (e) {
+        logger.error('Error starting flow:', e);
+        await this.bot.sendMessage(msg.chat.id, '⚠️ Could not start the flow.');
       }
     });
 
@@ -1234,8 +1271,27 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
         const data = query.data || '';
         const chatId = query.message.chat.id;
 
+        // Flow engine (single_choice)
+        if (data.startsWith('flow:')) {
+          const parts = data.split(':');
+          const flowId = parts[1];
+          const nodeId = parts[2];
+          const optionKey = parts[3];
+
+          // We don't strictly need nodeId here because session has current_node_id,
+          // but we include it in callback_data for debugging.
+          const userLang = await this.getUserLanguage(query.from.id, query.from.language_code);
+          await this.flow.transition({ chatId, lang: userLang || 'en', answer: optionKey });
+        }
+
+        // Flow back
+        else if (data.startsWith('flowback:')) {
+          const userLang = await this.getUserLanguage(query.from.id, query.from.language_code);
+          await this.flow.back({ chatId, lang: userLang || 'en' });
+        }
+
         // Onboarding (single_choice)
-        if (data.startsWith('onb:')) {
+        else if (data.startsWith('onb:')) {
           const parts = data.split(':');
           const questionId = parseInt(parts[1], 10);
           const optionKey = parts[2];

@@ -1,0 +1,48 @@
+{
+  "id": "service_flow",
+  "start": "service_type",
+  "nodes": {
+    "service_type": {
+      "type": "single_choice",
+      "text": {
+        "en": "What type of service do you need?"
+      },
+      "saveAs": "service_type",
+      "options": [
+        { "key": "A", "label": { "en": "Service A" }, "next": "service_a_option" },
+        { "key": "B", "label": { "en": "Service B" }, "next": "service_b_details" }
+      ]
+    },
+    "service_a_option": {
+      "type": "single_choice",
+      "text": { "en": "You selected Service A. Do you want option 1 or option 2?" },
+      "saveAs": "service_a_option",
+      "options": [
+        { "key": "1", "label": { "en": "Option 1" }, "next": "service_a1_followup" },
+        { "key": "2", "label": { "en": "Option 2" }, "next": "service_a2_followup" }
+      ]
+    },
+    "service_a1_followup": {
+      "type": "text",
+      "text": { "en": "Great. Please describe what you need for A1:" },
+      "saveAs": "service_a1_details",
+      "next": "summary"
+    },
+    "service_a2_followup": {
+      "type": "text",
+      "text": { "en": "Great. Please describe what you need for A2:" },
+      "saveAs": "service_a2_details",
+      "next": "summary"
+    },
+    "service_b_details": {
+      "type": "text",
+      "text": { "en": "You selected Service B. Please describe what you need:" },
+      "saveAs": "service_b_details",
+      "next": "summary"
+    },
+    "summary": {
+      "type": "end",
+      "text": { "en": "✅ Thanks! We received your answers." }
+    }
+  }
+}
