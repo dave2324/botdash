@@ -55,6 +55,7 @@ export default function AdminLayout({
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
+        <Header />
         <main
           className="flex-1 overflow-x-hidden overflow-y-auto p-2 py-4 bg-gray-50 transition-all duration-200"
           style={{ marginLeft: `${sidebarWidth}px` }}
@@ -64,4 +65,4 @@ export default function AdminLayout({
       </div>
     </div>
   );
-} 
+}
