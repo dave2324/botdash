@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getDashboardStats, type DashboardStats } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+
 import { CSSProperties } from 'react';
 
 // Navigation item type
@@ -44,7 +45,7 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const { hasPermission, isSuperAdmin } = useAuth();
+  const { hasPermission, isSuperAdmin, logout } = useAuth();
 
   // Draggable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState<number>(400); // Default width in pixels
