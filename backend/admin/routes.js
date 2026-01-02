@@ -74,6 +74,7 @@ const router = express.Router();
 const affiliateTasksRouter = require('./affiliate-tasks');
 const coursesRouter = require('./courses');
 const localAdsRouter = require('./local-ads');
+const flowsRouter = require('./flows');
 const activityLogsModule = require('./activity-logs');
 const adminUsersRouter = require('./admin-users');
 const userRequestsRouter = require('./user-requests');
@@ -83,6 +84,7 @@ const inboxRouter = require('./inbox');
 router.use('/affiliate-tasks', affiliateTasksRouter);
 router.use('/courses', coursesRouter);
 router.use('/local-ads', localAdsRouter);
+router.use('/flows', flowsRouter);
 router.use('/staff', adminUsersRouter); // Admin users management
 router.use('/user-requests', userRequestsRouter); // Admin inbox for user requests
 router.use('/inbox', inboxRouter); // Full conversation inbox

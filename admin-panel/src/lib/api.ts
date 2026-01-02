@@ -616,6 +616,67 @@ export const bulkUpdateSettings = async (settings: { key: string; value: string 
   return response.data.settings;
 };
 
+// --- FLOW BUILDER ---
+export const getFlows = async (): Promise<{ flows: any[] }> => {
+  const response = await api.get('/admin/flows');
+  return response.data;
+};
+
+export const createFlow = async (data: { slug: string; title: string; description?: string }): Promise<any> => {
+  const response = await api.post('/admin/flows', data);
+  return response.data;
+};
+
+export const getFlow = async (id: number): Promise<{ flow: any; versions: any[] }> => {
+  const response = await api.get(`/admin/flows/${id}`);
+  return response.data;
+};
+
+export const createFlowVersion = async (flowId: number): Promise<any> => {
+  const response = await api.post(`/admin/flows/${flowId}/versions`, {});
+  return response.data;
+};
+
+export const getFlowVersion = async (flowId: number, versionId: number): Promise<any> => {
+  const response = await api.get(`/admin/flows/${flowId}/versions/${versionId}`);
+  return response.data;
+};
+
+export const setFlowStartNode = async (versionId: number, start_node_key: string): Promise<any> => {
+  const response = await api.post(`/admin/flows/versions/${versionId}/start`, { start_node_key });
+  return response.data;
+};
+
+export const validateFlowVersion = async (versionId: number): Promise<{ ok: boolean; errors: string[] }> => {
+  const response = await api.get(`/admin/flows/versions/${versionId}/validate`);
+  return response.data;
+};
+
+export const publishFlowVersion = async (versionId: number): Promise<any> => {
+  const response = await api.post(`/admin/flows/versions/${versionId}/publish`, {});
+  return response.data;
+};
+
+export const upsertFlowNode = async (versionId: number, nodeKey: string, node: any): Promise<any> => {
+  const response = await api.put(`/admin/flows/versions/${versionId}/nodes/${encodeURIComponent(nodeKey)}`, node);
+  return response.data;
+};
+
+export const deleteFlowNode = async (versionId: number, nodeKey: string): Promise<any> => {
+  const response = await api.delete(`/admin/flows/versions/${versionId}/nodes/${encodeURIComponent(nodeKey)}`);
+  return response.data;
+};
+
+export const upsertFlowOption = async (nodeId: number, optionKey: string, option: any): Promise<any> => {
+  const response = await api.put(`/admin/flows/nodes/${nodeId}/options/${encodeURIComponent(optionKey)}`, option);
+  return response.data;
+};
+
+export const deleteFlowOption = async (nodeId: number, optionKey: string): Promise<any> => {
+  const response = await api.delete(`/admin/flows/nodes/${nodeId}/options/${encodeURIComponent(optionKey)}`);
+  return response.data;
+};
+
 // --- SPIN WHEEL ---
 export interface SpinWheelReward {
   id: number;
