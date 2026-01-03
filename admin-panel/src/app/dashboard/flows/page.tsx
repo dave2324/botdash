@@ -51,16 +51,16 @@ export default function FlowsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Flow Builder</CardTitle>
+          <CardTitle>Conversation Flow Builder</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Input placeholder="slug (e.g. service_flow)" value={slug} onChange={(e) => setSlug(e.target.value)} />
+            <Input placeholder="Flow ID (slug) e.g. service-flow" value={slug} onChange={(e) => setSlug(e.target.value)} />
             <Input placeholder="title" value={title} onChange={(e) => setTitle(e.target.value)} />
             <Button onClick={onCreate}>Create</Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            Each Flow has versions. Edit a draft version and publish when ready.
+            Each flow has versions. Edit a draft version and publish when ready. (Published = live for users)
           </p>
         </CardContent>
       </Card>

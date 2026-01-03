@@ -115,7 +115,7 @@ export default function FlowEditPage() {
   const onSetStart = async () => {
     if (!selectedVersionId) return;
     if (!version?.start_node_key) {
-      toast.error('Set start_node_key first');
+      toast.error('Set the First Question ID first');
       return;
     }
     try {
@@ -132,7 +132,7 @@ export default function FlowEditPage() {
     const n = nodes.find(x => x.node_key === nodeKey) || { node_key: nodeKey };
     try {
       await upsertFlowNode(selectedVersionId, nodeKey, n);
-      toast.success('Node saved');
+      toast.success('Question saved');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || e?.message || 'Failed');
@@ -175,7 +175,12 @@ export default function FlowEditPage() {
         <CardContent className="flex flex-wrap gap-2 items-center">
           <Button variant="outline" onClick={onCreateVersion}>New Draft Version</Button>
           <Button variant="outline" onClick={onValidate}>Validate</Button>
-          <Button onClick={onPublish}>Publish</Button>
+          <Button
+            onClick={onPublish}
+            className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+          >
+            Publish
+          </Button>
 
           <div className="ml-auto flex gap-2 items-center">
             <Select value={selectedVersionId ? String(selectedVersionId) : ''} onValueChange={(v) => setSelectedVersionId(Number(v))}>
@@ -197,32 +202,38 @@ export default function FlowEditPage() {
       {version && (
         <Card>
           <CardHeader>
-            <CardTitle>Version Settings</CardTitle>
+            <CardTitle>Version Settings (Draft / Published)</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
             <div>
-              <Label>start_node_key</Label>
-              <Input value={version.start_node_key || ''} onChange={(e) => setVersion({ ...version, start_node_key: e.target.value })} placeholder="e.g. service_type" />
+              <Label>First Question ID (start)</Label>
+              <Input value={version.start_node_key || ''} onChange={(e) => setVersion({ ...version, start_node_key: e.target.value })} placeholder="e.g. Start" />
             </div>
             <div>
               <Label>Status</Label>
               <Input value={version.status} disabled />
             </div>
-            <Button variant="outline" onClick={onSetStart}>Save start node</Button>
+            <Button
+              variant="outline"
+              onClick={onSetStart}
+              className="border-blue-500 text-blue-600 hover:bg-blue-600/10 dark:text-blue-300 dark:border-blue-400"
+            >
+              Save first question
+            </Button>
           </CardContent>
         </Card>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Nodes</CardTitle>
+          <CardTitle>Questions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-3">
             <Button
               variant="outline"
               onClick={() => {
-                const nk = prompt('New node_key? (unique)');
+                const nk = prompt('New Question ID? (unique)');
                 if (!nk || !selectedVersionId) return;
                 setNodes([
                   ...nodes,
@@ -240,19 +251,19 @@ export default function FlowEditPage() {
                 ]);
               }}
             >
-              Add Node
+              Add Question
             </Button>
           </div>
 
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Prompt (en)</TableHead>
-                <TableHead>Next</TableHead>
-                <TableHead>Save As</TableHead>
-                <TableHead>Validation (JSON)</TableHead>
+                <TableHead>Question ID</TableHead>
+                <TableHead>Question Type</TableHead>
+                <TableHead>Question text (English)</TableHead>
+                <TableHead>Go to Question ID (Next)</TableHead>
+                <TableHead>Save Answer As</TableHead>
+                <TableHead>Rules (JSON)</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -260,6 +271,7 @@ export default function FlowEditPage() {
               {nodes.map((n) => (
                 <TableRow key={n.node_key}>
                   <TableCell className="font-mono">{n.node_key}</TableCell>
+                  {/* Question ID shown above uses internal field node_key; label is user-friendly */}
                   <TableCell>
                     <Select value={n.type} onValueChange={(v) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, type: v } : x))}>
                       <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
@@ -292,8 +304,16 @@ export default function FlowEditPage() {
                     />
                   </TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button size="sm" onClick={() => onUpsertNode(n.node_key)}>Save</Button>
-                    <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>Delete</Button>
+                    <Button
+                      size="sm"
+                      onClick={() => onUpsertNode(n.node_key)}
+                      className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                    >
+                      Save Question
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>
+                      Delete Question
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -304,7 +324,7 @@ export default function FlowEditPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Options (for choice nodes)</CardTitle>
+          <CardTitle>Answer Choices (only for Single Choice / Multi Choice questions)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {nodes
@@ -316,12 +336,12 @@ export default function FlowEditPage() {
               return (
                 <div key={node.node_key} className="border rounded p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="font-semibold">{node.node_key}</div>
+                    <div className="font-semibold">Question: {node.node_key}</div>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        const ok = prompt('option_key? (e.g. A, 1, yes)');
+                        const ok = prompt('New choice key? (e.g. A, 1, yes)');
                         if (!ok) return;
                         setOptions([
                           ...options,
@@ -343,10 +363,10 @@ export default function FlowEditPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Key</TableHead>
-                        <TableHead>Label (en)</TableHead>
-                        <TableHead>Value</TableHead>
-                        <TableHead>Next</TableHead>
+                        <TableHead>Choice Key</TableHead>
+                        <TableHead>Button text (English)</TableHead>
+                        <TableHead>Saved value</TableHead>
+                        <TableHead>Go to Question ID (Next)</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -364,8 +384,16 @@ export default function FlowEditPage() {
                             <Input value={o.next_node_key || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===node.id && x.option_key===o.option_key) ? { ...x, next_node_key: e.target.value || null } : x))} />
                           </TableCell>
                           <TableCell className="text-right space-x-2">
-                            <Button size="sm" onClick={() => onUpsertOption(node.id, o.option_key)}>Save</Button>
-                            <Button size="sm" variant="destructive" onClick={() => onDeleteOption(node.id, o.option_key)}>Delete</Button>
+                            <Button
+                              size="sm"
+                              onClick={() => onUpsertOption(node.id, o.option_key)}
+                              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                            >
+                              Save Option
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => onDeleteOption(node.id, o.option_key)}>
+                              Delete Option
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
