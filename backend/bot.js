@@ -1122,8 +1122,24 @@ class TelegramBot {
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
 
         // Choose which flow to run. Default: service_flow (DB slug)
-        const configuredSlug = String((await this.getSettingValue('default_flow_id')) || '').trim();
-        const slug = (configuredSlug || process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
+        // DB-only default flow selection (no .env DEFAULT_FLOW_ID)
+        let slug = String((await this.getSettingValue('default_flow_id')) || '').trim();
+        if (!slug) {
+          // Auto-pick newest published active flow if no default is configured
+          const r = await pool.query(
+            `SELECT f.slug
+             FROM flows f
+             JOIN flow_versions v ON v.flow_id = f.id AND v.status='published'
+             WHERE f.is_active=TRUE
+             ORDER BY v.updated_at DESC
+             LIMIT 1`
+          );
+          slug = String(r.rows[0]?.slug || '').trim();
+        }
+        if (!slug) {
+          await this.bot.sendMessage(chatId, '⚠️ No published flow is configured. Please publish a flow and set it as default in Admin Panel → Flows.');
+          return;
+        }
         await this.flow.startFlow({ chatId, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
         logger.error('Error starting flow:', e);
@@ -1144,8 +1160,23 @@ class TelegramBot {
       try {
         const sender = msg.from;
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
-        const configuredSlug = String((await this.getSettingValue('default_flow_id')) || '').trim();
-        const slug = (configuredSlug || process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
+        // DB-only default flow selection (no .env DEFAULT_FLOW_ID)
+        let slug = String((await this.getSettingValue('default_flow_id')) || '').trim();
+        if (!slug) {
+          const r = await pool.query(
+            `SELECT f.slug
+             FROM flows f
+             JOIN flow_versions v ON v.flow_id = f.id AND v.status='published'
+             WHERE f.is_active=TRUE
+             ORDER BY v.updated_at DESC
+             LIMIT 1`
+          );
+          slug = String(r.rows[0]?.slug || '').trim();
+        }
+        if (!slug) {
+          await this.bot.sendMessage(msg.chat.id, '⚠️ No published flow is configured. Please publish a flow and set it as default in Admin Panel → Flows.');
+          return;
+        }
         await this.flow.startFlow({ chatId: msg.chat.id, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
         await this.bot.sendMessage(msg.chat.id, '⚠️ Could not restart flow.');
