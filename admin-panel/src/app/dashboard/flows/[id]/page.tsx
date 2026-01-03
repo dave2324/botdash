@@ -244,7 +244,6 @@ export default function FlowEditPage() {
                     prompt_i18n: { en: '' },
                     help_i18n: {},
                     required: true,
-                    validation: {},
                     next_node_key: null,
                     sort_order: nodes.length
                   }
@@ -263,7 +262,6 @@ export default function FlowEditPage() {
                 <TableHead>Question text (English)</TableHead>
                 <TableHead>Go to Question ID (Next)</TableHead>
                 <TableHead>Save Answer As</TableHead>
-                <TableHead>Rules (JSON)</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -281,27 +279,26 @@ export default function FlowEditPage() {
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <Input value={n.prompt_i18n?.en || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, prompt_i18n: { ...(x.prompt_i18n||{}), en: e.target.value } } : x))} />
+                    <Textarea
+                      value={n.prompt_i18n?.en || ''}
+                      onChange={(e) =>
+                        setNodes(
+                          nodes.map((x) =>
+                            x.node_key === n.node_key
+                              ? { ...x, prompt_i18n: { ...(x.prompt_i18n || {}), en: e.target.value } }
+                              : x
+                          )
+                        )
+                      }
+                      className="min-w-[260px]"
+                      rows={2}
+                    />
                   </TableCell>
                   <TableCell>
                     <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
                   </TableCell>
                   <TableCell>
                     <Input value={n.save_as || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, save_as: e.target.value || null } : x))} />
-                  </TableCell>
-                  <TableCell>
-                    <Textarea
-                      value={JSON.stringify(n.validation || {}, null, 2)}
-                      onChange={(e) => {
-                        try {
-                          const v = JSON.parse(e.target.value || '{}');
-                          setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, validation: v } : x));
-                        } catch {
-                          // ignore invalid while typing
-                        }
-                      }}
-                      className="min-w-[260px]"
-                    />
                   </TableCell>
                   <TableCell className="text-right space-x-2">
                     <Button
