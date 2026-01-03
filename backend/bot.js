@@ -1181,7 +1181,32 @@ class TelegramBot {
           // ignore secondary diagnostics errors
         }
 
-        await this.bot.sendMessage(msg.chat.id, '⚠️ Could not start the flow.');
+        // As a last resort, show a safe error reason (no secrets/stack) to help debugging in production.
+        const rawMsg = String(e?.message || '');
+        const code = String(e?.code || '');
+        let reason = null;
+
+        // Telegram polling conflict
+        if (rawMsg.includes('ETELEGRAM: 409') || rawMsg.includes('409 Conflict')) {
+          reason = 'Another bot instance is running (Telegram 409 Conflict). Stop other instances and redeploy.';
+        }
+        // Missing DB tables/columns (migrations)
+        else if (rawMsg.includes('does not exist')) {
+          if (rawMsg.includes('flow_sessions')) reason = 'Database migration missing: flow_sessions table not found.';
+          else if (rawMsg.includes('flows')) reason = 'Database migration missing: flows table not found.';
+          else if (rawMsg.includes('flow_versions')) reason = 'Database migration missing: flow_versions table not found.';
+          else if (rawMsg.includes('flow_nodes')) reason = 'Database migration missing: flow_nodes table not found.';
+          else if (rawMsg.includes('flow_options')) reason = 'Database migration missing: flow_options table not found.';
+          else if (rawMsg.includes('flow_version_id')) reason = 'Database migration missing: flow_sessions.flow_version_id column not found.';
+          else reason = 'Database migration missing: required table/column not found.';
+        }
+        // Invalid integer input (often undefined IDs)
+        else if (code === '22P02' || rawMsg.includes('invalid input syntax for type integer')) {
+          reason = 'Invalid ID was sent to the server (often happens if Options are saved before saving the Question). Save the Question first.';
+        }
+
+        const safeDetails = reason ? `\nReason: ${reason}` : '';
+        await this.bot.sendMessage(msg.chat.id, `⚠️ Could not start the flow.${safeDetails}`);
       }
     });
 
