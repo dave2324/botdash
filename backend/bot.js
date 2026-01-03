@@ -1122,7 +1122,8 @@ class TelegramBot {
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
 
         // Choose which flow to run. Default: service_flow (DB slug)
-        const slug = (process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
+        const configuredSlug = String((await this.getSettingValue('default_flow_id')) || '').trim();
+        const slug = (configuredSlug || process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
         await this.flow.startFlow({ chatId, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
         logger.error('Error starting flow:', e);
@@ -1143,7 +1144,8 @@ class TelegramBot {
       try {
         const sender = msg.from;
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
-        const slug = (process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
+        const configuredSlug = String((await this.getSettingValue('default_flow_id')) || '').trim();
+        const slug = (configuredSlug || process.env.DEFAULT_FLOW_ID || 'service_flow').trim();
         await this.flow.startFlow({ chatId: msg.chat.id, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
         await this.bot.sendMessage(msg.chat.id, '⚠️ Could not restart flow.');

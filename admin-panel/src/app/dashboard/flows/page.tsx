@@ -7,19 +7,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { createFlow, getFlows } from '@/lib/api';
+import { bulkUpdateSettings, createFlow, getFlows, getSettings } from '@/lib/api';
 
 export default function FlowsPage() {
   const [flows, setFlows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
+  const [defaultFlowId, setDefaultFlowId] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await getFlows();
-      setFlows(data.flows || []);
+      const [flowsData, settingsData] = await Promise.all([getFlows(), getSettings()]);
+      setFlows(flowsData.flows || []);
+
+      const def = (settingsData.settings || []).find((s: any) => s.key === 'default_flow_id');
+      setDefaultFlowId(String(def?.value || ''));
     } catch (e: any) {
       toast.error(e?.message || 'Failed to load flows');
     } finally {
@@ -30,6 +34,16 @@ export default function FlowsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const setAsDefault = async (flowId: string) => {
+    try {
+      await bulkUpdateSettings([{ key: 'default_flow_id', value: flowId }]);
+      setDefaultFlowId(flowId);
+      toast.success(`Default flow set to: ${flowId}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || 'Failed to set default flow');
+    }
+  };
 
   const onCreate = async () => {
     if (!slug.trim() || !title.trim()) {
@@ -77,7 +91,7 @@ export default function FlowsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>Slug</TableHead>
+                  <TableHead>Flow ID</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Published</TableHead>
                   <TableHead></TableHead>
@@ -90,7 +104,14 @@ export default function FlowsPage() {
                     <TableCell className="font-mono">{f.slug}</TableCell>
                     <TableCell>{f.title}</TableCell>
                     <TableCell>{f.published?.version ? `v${f.published.version}` : '—'}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
+                      {defaultFlowId === f.slug ? (
+                        <span className="text-xs px-2 py-1 rounded bg-muted">Default</span>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setAsDefault(f.slug)}>
+                          Set Default
+                        </Button>
+                      )}
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/dashboard/flows/${f.id}`}>Edit</Link>
                       </Button>

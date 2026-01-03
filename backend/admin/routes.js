@@ -1716,14 +1716,14 @@ router.patch('/settings/:key', adminAuth, async (req, res) => {
     // Convert value to string to support text column type
     const stringValue = String(value);
 
+    // Upsert (create if missing)
     const result = await pool.query(
-      'UPDATE settings SET value = $1, updated_at = NOW() WHERE key = $2 RETURNING *',
-      [stringValue, key]
+      `INSERT INTO settings (key, value, description, updated_at)
+       VALUES ($1, $2, NULL, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+       RETURNING *`,
+      [key, stringValue]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Setting not found' });
-    }
 
     res.json({ setting: result.rows[0] });
   } catch (error) {
@@ -1752,13 +1752,14 @@ router.post('/settings/bulk-update', adminAuth, async (req, res) => {
       const stringValue = String(value);
       
       const result = await pool.query(
-        'UPDATE settings SET value = $1, updated_at = NOW() WHERE key = $2 RETURNING *',
-        [stringValue, key]
+        `INSERT INTO settings (key, value, description, updated_at)
+         VALUES ($1, $2, NULL, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+         RETURNING *`,
+        [key, stringValue]
       );
-      
-      if (result.rows[0]) {
-        updates.push(result.rows[0]);
-      }
+
+      updates.push(result.rows[0]);
     }
 
     res.json({ settings: updates });
