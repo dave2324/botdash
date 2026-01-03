@@ -325,8 +325,21 @@ export default function FlowEditPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {nodes
-            .filter((n) => n.type === 'single_choice' || n.type === 'multi_choice')
+            .filter((n) => (n.type === 'single_choice' || n.type === 'multi_choice'))
             .map((n) => {
+              // If a question is not saved yet, it won't have a numeric id.
+              // Options are stored by flow_node_id, so we must save the question first.
+              if (!n.id) {
+                return (
+                  <div key={n.node_key} className="border rounded p-3">
+                    <div className="font-semibold">Question: {n.node_key}</div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      Save this question first to enable options.
+                    </div>
+                  </div>
+                );
+              }
+
               const node = nodesById.get(n.id);
               if (!node) return null;
               const list = optionsByNodeId.get(node.id) || [];

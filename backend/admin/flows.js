@@ -3,6 +3,15 @@ const router = express.Router();
 const pool = require('../config/database');
 const { adminAuth } = require('./auth');
 
+function requireIntParam(value, name, res) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) {
+    res.status(400).json({ message: `Invalid ${name}` });
+    return null;
+  }
+  return n;
+}
+
 // Helpers
 const now = () => new Date().toISOString();
 
@@ -97,7 +106,8 @@ router.post('/', adminAuth, async (req, res) => {
 
 // Get flow with versions
 router.get('/:id', adminAuth, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = requireIntParam(req.params.id, 'id', res);
+  if (id === null) return;
   try {
     const flowRes = await pool.query('SELECT * FROM flows WHERE id=$1', [id]);
     if (flowRes.rows.length === 0) return res.status(404).json({ message: 'Not found' });
@@ -115,7 +125,8 @@ router.get('/:id', adminAuth, async (req, res) => {
 
 // Create a new draft version (clone from latest)
 router.post('/:id/versions', adminAuth, async (req, res) => {
-  const flowId = parseInt(req.params.id, 10);
+  const flowId = requireIntParam(req.params.id, 'id', res);
+  if (flowId === null) return;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -204,7 +215,8 @@ router.get('/:id/versions/:versionId', adminAuth, async (req, res) => {
 
 // Upsert node
 router.put('/versions/:versionId/nodes/:nodeKey', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   const nodeKey = String(req.params.nodeKey);
   const {
     type,
@@ -250,7 +262,8 @@ router.put('/versions/:versionId/nodes/:nodeKey', adminAuth, async (req, res) =>
 
 // Delete node
 router.delete('/versions/:versionId/nodes/:nodeKey', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   const nodeKey = String(req.params.nodeKey);
   try {
     const result = await pool.query(
@@ -267,7 +280,8 @@ router.delete('/versions/:versionId/nodes/:nodeKey', adminAuth, async (req, res)
 
 // Upsert option
 router.put('/nodes/:nodeId/options/:optionKey', adminAuth, async (req, res) => {
-  const nodeId = parseInt(req.params.nodeId, 10);
+  const nodeId = requireIntParam(req.params.nodeId, 'nodeId', res);
+  if (nodeId === null) return;
   const optionKey = String(req.params.optionKey);
   const { label_i18n, value, next_node_key, sort_order } = req.body || {};
 
@@ -289,7 +303,8 @@ router.put('/nodes/:nodeId/options/:optionKey', adminAuth, async (req, res) => {
 });
 
 router.delete('/nodes/:nodeId/options/:optionKey', adminAuth, async (req, res) => {
-  const nodeId = parseInt(req.params.nodeId, 10);
+  const nodeId = requireIntParam(req.params.nodeId, 'nodeId', res);
+  if (nodeId === null) return;
   const optionKey = String(req.params.optionKey);
   try {
     const result = await pool.query(
@@ -306,7 +321,8 @@ router.delete('/nodes/:nodeId/options/:optionKey', adminAuth, async (req, res) =
 
 // Set start node for a version
 router.post('/versions/:versionId/start', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   const { start_node_key } = req.body || {};
   if (!start_node_key) return res.status(400).json({ message: 'start_node_key is required' });
   try {
@@ -324,7 +340,8 @@ router.post('/versions/:versionId/start', adminAuth, async (req, res) => {
 
 // Reorder nodes (expects [{node_key, sort_order}])
 router.post('/versions/:versionId/nodes/reorder', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   const { items } = req.body || {};
   if (!Array.isArray(items)) return res.status(400).json({ message: 'items[] required' });
   const client = await pool.connect();
@@ -349,7 +366,8 @@ router.post('/versions/:versionId/nodes/reorder', adminAuth, async (req, res) =>
 
 // Reorder options for a node (expects [{option_key, sort_order}])
 router.post('/nodes/:nodeId/options/reorder', adminAuth, async (req, res) => {
-  const nodeId = parseInt(req.params.nodeId, 10);
+  const nodeId = requireIntParam(req.params.nodeId, 'nodeId', res);
+  if (nodeId === null) return;
   const { items } = req.body || {};
   if (!Array.isArray(items)) return res.status(400).json({ message: 'items[] required' });
   const client = await pool.connect();
@@ -374,7 +392,8 @@ router.post('/nodes/:nodeId/options/reorder', adminAuth, async (req, res) => {
 
 // Validate a version (basic: start node exists, all next keys exist)
 router.get('/versions/:versionId/validate', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   try {
     const verRes = await pool.query('SELECT * FROM flow_versions WHERE id=$1', [versionId]);
     if (verRes.rows.length === 0) return res.status(404).json({ message: 'Not found' });
@@ -411,7 +430,8 @@ router.get('/versions/:versionId/validate', adminAuth, async (req, res) => {
 
 // Publish a version
 router.post('/versions/:versionId/publish', adminAuth, async (req, res) => {
-  const versionId = parseInt(req.params.versionId, 10);
+  const versionId = requireIntParam(req.params.versionId, 'versionId', res);
+  if (versionId === null) return;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

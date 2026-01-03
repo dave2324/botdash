@@ -1143,6 +1143,44 @@ class TelegramBot {
         await this.flow.startFlow({ chatId, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
         logger.error('Error starting flow:', e);
+
+        // Friendly diagnostics (common admin misconfiguration)
+        try {
+          const configured = String((await this.getSettingValue('default_flow_id')) || '').trim();
+          let slug = configured;
+          if (!slug) {
+            const r = await pool.query(
+              `SELECT f.slug
+               FROM flows f
+               JOIN flow_versions v ON v.flow_id = f.id AND v.status='published'
+               WHERE f.is_active=TRUE
+               ORDER BY v.updated_at DESC
+               LIMIT 1`
+            );
+            slug = String(r.rows[0]?.slug || '').trim();
+          }
+
+          if (slug) {
+            const flowRes = await pool.query('SELECT id FROM flows WHERE slug=$1 AND is_active=TRUE LIMIT 1', [slug]);
+            if (flowRes.rows.length) {
+              const verRes = await pool.query(
+                `SELECT start_node_key FROM flow_versions WHERE flow_id=$1 AND status='published' LIMIT 1`,
+                [flowRes.rows[0].id]
+              );
+              if (!verRes.rows.length) {
+                await this.bot.sendMessage(msg.chat.id, '⚠️ No published version found for the default flow. Publish a version in Admin Panel → Flows.');
+                return;
+              }
+              if (!verRes.rows[0].start_node_key) {
+                await this.bot.sendMessage(msg.chat.id, '⚠️ First Question not set. Please set “First Question ID (start)” and publish the version in Admin Panel → Flows.');
+                return;
+              }
+            }
+          }
+        } catch {
+          // ignore secondary diagnostics errors
+        }
+
         await this.bot.sendMessage(msg.chat.id, '⚠️ Could not start the flow.');
       }
     });
@@ -1179,6 +1217,42 @@ class TelegramBot {
         }
         await this.flow.startFlow({ chatId: msg.chat.id, userId: parseInt(sender.id, 10), slug, lang: userLang || 'en' });
       } catch (e) {
+        logger.error('Error restarting flow:', e);
+
+        try {
+          const configured = String((await this.getSettingValue('default_flow_id')) || '').trim();
+          let slug = configured;
+          if (!slug) {
+            const r = await pool.query(
+              `SELECT f.slug
+               FROM flows f
+               JOIN flow_versions v ON v.flow_id = f.id AND v.status='published'
+               WHERE f.is_active=TRUE
+               ORDER BY v.updated_at DESC
+               LIMIT 1`
+            );
+            slug = String(r.rows[0]?.slug || '').trim();
+          }
+
+          if (slug) {
+            const flowRes = await pool.query('SELECT id FROM flows WHERE slug=$1 AND is_active=TRUE LIMIT 1', [slug]);
+            if (flowRes.rows.length) {
+              const verRes = await pool.query(
+                `SELECT start_node_key FROM flow_versions WHERE flow_id=$1 AND status='published' LIMIT 1`,
+                [flowRes.rows[0].id]
+              );
+              if (!verRes.rows.length) {
+                await this.bot.sendMessage(msg.chat.id, '⚠️ No published version found for the default flow. Publish a version in Admin Panel → Flows.');
+                return;
+              }
+              if (!verRes.rows[0].start_node_key) {
+                await this.bot.sendMessage(msg.chat.id, '⚠️ First Question not set. Please set “First Question ID (start)” and publish the version in Admin Panel → Flows.');
+                return;
+              }
+            }
+          }
+        } catch {}
+
         await this.bot.sendMessage(msg.chat.id, '⚠️ Could not restart flow.');
       }
     });
