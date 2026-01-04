@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { uploadFile } from '@/lib/api';
 import api from '@/lib/api';
 
@@ -40,6 +40,8 @@ type ConversationMessage = {
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const sendingRef = useRef(false);
+  const lastSendRef = useRef<{ sig: string; at: number } | null>(null);
+  const cooldownUntilRef = useRef<number>(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -99,43 +101,108 @@ export default function InboxPage() {
     else setMediaType('document');
   };
 
-  const sendReply = async () => {
-    if (sending) return; // prevent duplicate sends from rapid clicks
-    if (!selectedConversation) return;
-    if (!replyText.trim() && !mediaUrl.trim()) return;
+  const sendReply = async (e?: MouseEvent<HTMLButtonElement>) => {
+    // If this button ends up inside a <form>, prevent implicit submit.
+    e?.preventDefault();
+    e?.stopPropagation();
 
-    // Hard lock to prevent double-submit (React state updates are async)
+    // Hard lock to prevent double-submit (React state updates are async).
     if (sendingRef.current) return;
-    sendingRef.current = true;
 
+    if (!selectedConversation) return;
+
+    // Small cooldown to avoid accidental double-clicks sending duplicates.
+    if (Date.now() < cooldownUntilRef.current) return;
+
+    const text = replyText.trim();
+    const url = mediaUrl.trim();
+    const hasMedia = !!url;
+
+    if (!text && !hasMedia) return;
+
+    // De-dupe same payload (text/media) within a short time window.
+    const sig = `${selectedConversation.id}::${text}::${hasMedia ? `${mediaType}:${url}` : ''}`;
+    const last = lastSendRef.current;
+    if (last && last.sig === sig && Date.now() - last.at < 2500) return;
+
+    sendingRef.current = true;
     setSending(true);
+
+    // Optimistic message so it appears immediately in the chat.
+    const optimisticId = -Date.now();
+    const nowIso = new Date().toISOString();
+    const optimisticMessage: ConversationMessage = {
+      id: optimisticId,
+      conversation_id: selectedConversation.id,
+      direction: 'outbound',
+      telegram_message_id: null,
+      telegram_reply_to_message_id: null,
+      sender_telegram_user_id: null,
+      type: hasMedia ? mediaType || 'media' : 'text',
+      text: text || null,
+      file_id: null,
+      file_unique_id: null,
+      file_name: hasMedia ? (mediaFileName || null) : null,
+      mime_type: null,
+      file_size: null,
+      media_duration: null,
+      payload: hasMedia
+        ? {
+            media_type: mediaType,
+            media_url: url,
+          }
+        : null,
+      created_at: nowIso,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
     try {
-      const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+      const conversationId = selectedConversation.id;
+      const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound');
 
       const idempotencyKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      await api.post(`/admin/inbox/conversations/${selectedConversation.id}/reply`, {
-        text: replyText.trim() ? replyText : undefined,
-        media_type: mediaUrl ? mediaType : undefined,
-        media_url: mediaUrl ? mediaUrl : undefined,
+      await api.post(`/admin/inbox/conversations/${conversationId}/reply`, {
+        text: text ? text : undefined,
+        media_type: hasMedia ? mediaType : undefined,
+        media_url: hasMedia ? url : undefined,
         reply_to_message_id: lastInbound?.telegram_message_id || undefined,
         parse_mode: 'HTML',
-        idempotency_key: idempotencyKey
+        idempotency_key: idempotencyKey,
       });
 
+      // Remember the last payload to prevent rapid duplicates.
+      lastSendRef.current = { sig, at: Date.now() };
+      cooldownUntilRef.current = Date.now() + 800;
+
+      // Clear composer and stop spinner immediately after send succeeds.
       setReplyText('');
       setMediaType('');
       setMediaUrl('');
       setMediaFileName('');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
 
-      await loadMessages(selectedConversation.id);
-      await loadConversations();
-    } finally {
       setSending(false);
       sendingRef.current = false;
+
+      // Refresh in the background to reconcile optimistic message with DB state.
+      void (async () => {
+        try {
+          await loadMessages(conversationId);
+          await loadConversations();
+        } catch {
+          // Ignore refresh errors.
+        }
+      })();
+    } catch (err) {
+      // If the send failed, remove the optimistic message.
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+
+      setSending(false);
+      sendingRef.current = false;
+
+      throw err;
     }
   };
 
@@ -303,6 +370,7 @@ export default function InboxPage() {
 
               {/* Send button with icon */}
               <button
+                type="button"
                 onClick={sendReply}
                 disabled={!selectedConversation || sending || (!replyText.trim() && !mediaUrl.trim())}
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
