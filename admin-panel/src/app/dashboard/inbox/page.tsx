@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadFile } from '@/lib/api';
 import api from '@/lib/api';
 
@@ -39,13 +39,17 @@ type ConversationMessage = {
 
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const sendingRef = useRef(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [mediaType, setMediaType] = useState<string>('');
   const [mediaUrl, setMediaUrl] = useState<string>('');
+  const [mediaFileName, setMediaFileName] = useState<string>('');
   const [sending, setSending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find(c => c.id === selectedId) || null,
@@ -77,9 +81,17 @@ export default function InboxPage() {
     if (selectedId) loadMessages(selectedId);
   }, [selectedId]);
 
+  // Auto-scroll to the latest message when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, selectedId]);
+
   const handleUpload = async (file: File) => {
     const up = await uploadFile(file, 'inbox');
     setMediaUrl(up.url);
+    setMediaFileName(file.name || '');
 
     if (file.type.startsWith('image/')) setMediaType('photo');
     else if (file.type.startsWith('video/')) setMediaType('video');
@@ -88,29 +100,42 @@ export default function InboxPage() {
   };
 
   const sendReply = async () => {
+    if (sending) return; // prevent duplicate sends from rapid clicks
     if (!selectedConversation) return;
     if (!replyText.trim() && !mediaUrl.trim()) return;
+
+    // Hard lock to prevent double-submit (React state updates are async)
+    if (sendingRef.current) return;
+    sendingRef.current = true;
 
     setSending(true);
     try {
       const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+
+      const idempotencyKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
       await api.post(`/admin/inbox/conversations/${selectedConversation.id}/reply`, {
         text: replyText.trim() ? replyText : undefined,
         media_type: mediaUrl ? mediaType : undefined,
         media_url: mediaUrl ? mediaUrl : undefined,
         reply_to_message_id: lastInbound?.telegram_message_id || undefined,
-        parse_mode: 'HTML'
+        parse_mode: 'HTML',
+        idempotency_key: idempotencyKey
       });
 
       setReplyText('');
       setMediaType('');
       setMediaUrl('');
+      setMediaFileName('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
 
       await loadMessages(selectedConversation.id);
       await loadConversations();
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -155,94 +180,149 @@ export default function InboxPage() {
         </div>
 
         {/* Messages */}
-        <div className="bg-white border rounded-lg overflow-hidden lg:col-span-2">
-          <div className="p-3 border-b font-medium">
+        <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2 flex flex-col h-[70vh]">
+          <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50/60">
             {selectedConversation ? (
-              <span>
-                Chat: {selectedConversation.telegram_chat_id}
-                {selectedConversation.username ? ` (@${selectedConversation.username})` : ''}
-              </span>
+              <div>
+                <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <span>
+                    {selectedConversation.username
+                      ? `@${selectedConversation.username}`
+                      : [selectedConversation.first_name, selectedConversation.last_name]
+                          .filter(Boolean)
+                          .join(' ') || `Chat ${selectedConversation.telegram_chat_id}`}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Chat ID: {selectedConversation.telegram_chat_id}
+                </div>
+              </div>
             ) : (
-              'Select a conversation'
+              <span className="text-sm text-gray-500">Select a conversation to start chatting</span>
             )}
           </div>
 
-          <div className="p-4 max-h-[55vh] overflow-auto space-y-2">
+          {/* Messages list */}
+          <div className="flex-1 px-4 py-3 overflow-auto space-y-3 bg-gray-50">
             {loading && <div className="text-sm text-gray-500">Loading…</div>}
 
             {!loading && selectedConversation && messages.length === 0 && (
               <div className="text-sm text-gray-500">No messages yet.</div>
             )}
 
-            {!loading && messages.map((m) => (
-              <div
-                key={m.id}
-                className={`p-3 rounded border ${m.direction === 'outbound' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs font-medium text-gray-700">
-                    {m.direction === 'outbound' ? 'Admin/Bot' : 'User'} • {m.type}
+            {!loading && messages.map((m) => {
+              const isOutbound = m.direction === 'outbound';
+              return (
+                <div
+                  key={m.id}
+                  className={`flex w-full ${isOutbound ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-xl rounded-2xl px-3 py-2 shadow-sm border text-sm whitespace-pre-wrap break-words
+                      ${isOutbound
+                        ? 'bg-blue-600 text-white border-blue-600 rounded-br-md'
+                        : 'bg-white text-gray-900 border-gray-200 rounded-bl-md'}`}
+                  >
+                    {m.text && (
+                      <div className={`text-sm leading-relaxed ${isOutbound ? 'text-white' : 'text-gray-900'}`}>
+                        {m.text}
+                      </div>
+                    )}
+
+                    {(m.file_id || m.file_name) && (
+                      <div className={`mt-2 text-[11px] ${isOutbound ? 'text-blue-100/90' : 'text-gray-500'}`}>
+                        {m.file_name && (
+                          <div>file_name: <span className="font-medium">{m.file_name}</span></div>
+                        )}
+                        {m.file_id && (
+                          <div className="break-all font-mono opacity-80">file_id: {m.file_id}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-[11px] text-gray-400">{new Date(m.created_at).toLocaleString()}</div>
                 </div>
+              );
+            })}
 
-                {m.text && <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>}
-
-                {m.file_id && (
-                  <div className="text-xs text-gray-600 mt-2">
-                    file_id: <span className="font-mono break-all">{m.file_id}</span>
-                  </div>
-                )}
-
-                {m.file_name && (
-                  <div className="text-xs text-gray-600">file_name: {m.file_name}</div>
-                )}
-              </div>
-            ))}
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Reply composer */}
-          <div className="border-t p-4 space-y-2">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="border-t bg-white/80 backdrop-blur-sm px-4 py-3">
+            <div className="flex items-end gap-2">
               <textarea
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                rows={3}
-                placeholder="Type a reply… (links are ok)"
-                className="md:col-span-2 w-full px-3 py-2 border rounded"
+                rows={2}
+                placeholder="Type a message…"
+                className="flex-1 w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 disabled:bg-gray-100 resize-none"
                 disabled={!selectedConversation || sending}
               />
 
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUpload(f);
-                  }}
-                  disabled={!selectedConversation || sending}
-                />
+              {/* Attach button with icon */}
+              <div className="flex flex-col items-center gap-1 text-[10px] text-gray-500">
+                <label className="inline-flex items-center justify-center w-9 h-9 rounded-full border bg-gray-50 hover:bg-gray-100 cursor-pointer">
+                  <svg
+                    className="w-4 h-4 text-gray-600"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24L9.88 16.24a1 1 0 0 1-1.41-1.41L15.54 7.76" />
+                  </svg>
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(f);
+                    }}
+                    disabled={!selectedConversation || sending}
+                  />
+                </label>
+                {mediaUrl && (() => {
+                  const derivedFromUrl = mediaUrl.split('/').pop() || '';
+                  const cleanFromUrl = derivedFromUrl.split('?')[0];
+                  const baseName = mediaFileName || cleanFromUrl;
+                  const label = baseName
+                    ? `${baseName}${mediaType ? ` (${mediaType})` : ''}`
+                    : (mediaType || 'media');
 
-                <div className="text-xs text-gray-500">
-                  {mediaUrl ? (
-                    <div>
-                      <div>media_type: <b>{mediaType}</b></div>
-                      <div className="break-all">media_url: {mediaUrl}</div>
-                    </div>
-                  ) : (
-                    'Optional: attach media'
-                  )}
-                </div>
+                  return (
+                    <span className="max-w-[8rem] truncate" title={baseName || mediaUrl}>
+                      {label}
+                    </span>
+                  );
+                })()}
               </div>
-            </div>
 
-            <div className="flex justify-end">
+              {/* Send button with icon */}
               <button
                 onClick={sendReply}
                 disabled={!selectedConversation || sending || (!replyText.trim() && !mediaUrl.trim())}
-                className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {sending ? 'Sending…' : 'Send Reply'}
+                {sending ? (
+                  <span className="text-[11px] font-medium">...</span>
+                ) : (
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                )}
               </button>
             </div>
           </div>
