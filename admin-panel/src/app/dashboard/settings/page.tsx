@@ -21,7 +21,7 @@ import {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Setting[]>([]);
-  const [activeTab, setActiveTab] = useState<'points' | 'premium' | 'welcome' | 'languages' | 'onboarding' | 'broadcast'>('points');
+  const [activeTab, setActiveTab] = useState<'points' | 'premium' | 'welcome' | 'languages' | 'onboarding' | 'broadcast'>('welcome');
 
   const [supportedLanguages, setSupportedLanguages] = useState<string>('');
   const [defaultLanguage, setDefaultLanguage] = useState<string>('en');
@@ -155,36 +155,6 @@ export default function SettingsPage() {
         <ul className="flex flex-wrap -mb-px">
           <li className="mr-2">
             <button 
-              onClick={() => setActiveTab('points')}
-              className={`inline-block p-4 border-b-2 ${
-                activeTab === 'points' 
-                  ? 'text-blue-600 border-blue-600' 
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
-              } rounded-t-lg`}
-            >
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Points
-              </div>
-            </button>
-          </li>
-          <li className="mr-2">
-            <button 
-              onClick={() => setActiveTab('premium')}
-              className={`inline-block p-4 border-b-2 ${
-                activeTab === 'premium' 
-                  ? 'text-blue-600 border-blue-600' 
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
-              } rounded-t-lg`}
-            >
-              <div className="flex items-center gap-2">
-                <Crown className="h-4 w-4" />
-                Premium Features
-              </div>
-            </button>
-          </li>
-          <li className="mr-2">
-            <button 
               onClick={() => setActiveTab('welcome')}
               className={`inline-block p-4 border-b-2 ${
                 activeTab === 'welcome' 
@@ -262,7 +232,7 @@ export default function SettingsPage() {
       {activeTab === 'welcome' && (
         <div className="grid gap-4">
           <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-sm font-medium text-gray-900">Welcome Message (plain text)</h3>
+            <h3 className="text-sm font-medium text-gray-900">Welcome Message</h3>
             
             <textarea
               value={welcomeText}
@@ -274,7 +244,16 @@ export default function SettingsPage() {
 
             <div className="mt-4 grid gap-3">
               <div>
-                <label className="text-sm font-medium text-gray-900">Welcome Image URL / file_id</label>
+                {welcomeImageUrl && (
+                  <div className="mt-2 mb-2">
+                    <img
+                      src={welcomeImageUrl}
+                      alt="Welcome preview"
+                      className="max-h-40 rounded border border-gray-200 object-contain bg-gray-50"
+                    />
+                  </div>
+                )}
+                <label className="text-sm font-medium text-gray-900">Welcome Image URL</label>
                 <div className="flex gap-2 mt-2">
                   <input
                     className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm"
@@ -308,7 +287,16 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-900">Welcome Video URL / file_id</label>
+                {welcomeVideoUrl && (
+                  <div className="mt-2 mb-2">
+                    <video
+                      src={welcomeVideoUrl}
+                      controls
+                      className="max-h-56 rounded border border-gray-200 bg-black"
+                    />
+                  </div>
+                )}
+                <label className="text-sm font-medium text-gray-900">Welcome Video URL</label>
                 <div className="flex gap-2 mt-2">
                   <input
                     className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm"
@@ -341,58 +329,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-4">
-            {settings
-              .filter(setting => setting.key === 'welcome_message' || setting.key === 'welcome_image_url')
-              .map((setting) => (
-                <motion.div
-                  key={setting.key}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 rounded-lg bg-white shadow-sm border"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-sm font-medium text-gray-900">
-                        {setting.key
-                          .split('_')
-                          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                          .join(' ')}
-                      </h3>
-                      <p className="text-sm text-gray-500 mt-1">{setting.description}</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        Last updated: {new Date(setting.updated_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 items-end min-w-[18rem] max-w-xl w-full">
-                      {setting.key === 'welcome_message' ? (
-                        <>
-                          <textarea
-                            value={String(setting.value ?? '')}
-                            onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                            rows={8}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                            placeholder="Example: 👋 Welcome {first_name}!\\nЗдравствуйте ,Bonjour ,Hello ,مرحباً"
-                          />
-                          <span className="text-xs text-gray-400 text-right">
-                            Variables: {'{first_name}'} {'{last_name}'} {'{username}'} {'{points}'} {'{referrer_name}'} {'{referrer_points}'}
-                          </span>
-                        </>
-                      ) : (
-                        <input
-                          type="text"
-                          value={String(setting.value ?? '')}
-                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          placeholder="https://example.com/logo.png or Telegram file_id"
-                        />
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
           </div>
         </div>
       )}
@@ -641,106 +577,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-
-      {/* Points Settings Tab */}
-      {activeTab === 'points' && (
-        <div className="grid gap-4">
-          {settings
-            .filter(setting => !setting.key.startsWith('premium_') && !setting.key.startsWith('welcome_'))
-            .map((setting) => (
-            <motion.div
-              key={setting.key}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-4 rounded-lg bg-white shadow-sm border"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-gray-900">
-                    {setting.key.split('_').map(word => 
-                      word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ')}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">{setting.description}</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Last updated: {new Date(setting.updated_at).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={setting.value}
-                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                    className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  {!(setting.key === 'max_math_quiz_plays_per_day' || setting.key === 'max_spin_wheel_plays_per_day') && (
-                    <span className="text-sm text-gray-500">points</span>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {/* Premium Features Tab */}
-      {activeTab === 'premium' && (
-        <div className="grid gap-4">
-          {settings.filter(setting => setting.key.startsWith('premium_')).map((setting) => (
-            <motion.div
-              key={setting.key}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-4 rounded-lg bg-white shadow-sm border"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-gray-900">
-                    {setting.key.replace('premium_', '').split('_').map(word => 
-                      word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ')}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">{setting.description}</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Last updated: {new Date(setting.updated_at).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {setting.key === 'premium_enabled' ? (
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={setting.value === '1' || setting.value === 1}
-                        onChange={(e) => handleValueChange(setting.key, e.target.checked ? '1' : '0')}
-                        className="sr-only peer" 
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                  ) : setting.key === 'premium_price_monthly' ? (
-                    <>
-                      <span className="text-sm text-gray-500">$</span>
-                      <input
-                        type="text"
-                        value={(Number(setting.value) / 100).toFixed(2)}
-                        onChange={(e) => handleValueChange(setting.key, (parseFloat(e.target.value) * 100).toString())}
-                        className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </>
-                  ) : (
-                    <input
-                      type="number"
-                      value={setting.value}
-                      onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                      className="w-24 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
     </div>
   );
-} 
+}
