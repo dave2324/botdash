@@ -616,6 +616,26 @@ export const bulkUpdateSettings = async (settings: { key: string; value: string 
   return response.data.settings;
 };
 
+// --- Welcome Blocks ---
+export type WelcomeBlockType = 'text' | 'link' | 'image' | 'video' | 'question_flow';
+export type WelcomeBlock = {
+  id?: number;
+  sort_order: number;
+  is_active: boolean;
+  block_type: WelcomeBlockType;
+  payload: any;
+};
+
+export const getWelcomeBlocks = async (): Promise<{ blocks: WelcomeBlock[] }> => {
+  const response = await api.get('/admin/welcome-blocks');
+  return response.data;
+};
+
+export const saveWelcomeBlocks = async (blocks: WelcomeBlock[]): Promise<{ blocks: WelcomeBlock[] }> => {
+  const response = await api.put('/admin/welcome-blocks', { blocks });
+  return response.data;
+};
+
 // --- FLOW BUILDER ---
 export const getFlows = async (): Promise<{ flows: any[] }> => {
   const response = await api.get('/admin/flows');

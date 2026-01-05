@@ -971,7 +971,19 @@ class TelegramBot {
         // NOTE: language is still useful for onboarding question translations.
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
 
-        // Plain welcome settings (NO template variables)
+        // Welcome blocks (preferred): ordered /start sequence stored in DB
+        let welcomeBlocks = [];
+        try {
+          const wbRes = await pool.query(
+            `SELECT * FROM welcome_blocks WHERE is_active = TRUE ORDER BY sort_order ASC, id ASC`
+          );
+          welcomeBlocks = wbRes.rows || [];
+        } catch (e) {
+          // If table doesn't exist yet, ignore and fall back to legacy settings.
+          welcomeBlocks = [];
+        }
+
+        // Plain welcome settings fallback (legacy)
         const welcomeText = String((await this.getSettingValue('welcome_text')) ?? '').trim();
         const welcomeImage = String((await this.getSettingValue('welcome_image_url')) ?? '').trim() || null;
         const welcomeVideo = String((await this.getSettingValue('welcome_video_url')) ?? '').trim() || null;
@@ -1005,41 +1017,91 @@ class TelegramBot {
 
         const welcomeMessage = welcomeText;
 
-        // Optionally send a welcome video first
-        if (welcomeVideo) {
-          try {
-            await this.bot.sendVideo(msg.chat.id, welcomeVideo);
-          } catch (e) {
-            logger.warn('Could not send welcome video', e);
-          }
-        }
+        let startedWelcomeFlow = false;
 
-        // Optionally send a welcome image
-        if (welcomeImage) {
-          try {
-            await this.bot.sendPhoto(msg.chat.id, welcomeImage);
-          } catch (e) {
-            logger.warn('Could not send welcome image', e);
-          }
-        }
+        // If welcome blocks exist, send them in order (only for /start)
+        if (Array.isArray(welcomeBlocks) && welcomeBlocks.length > 0) {
+          for (const b of welcomeBlocks) {
+            if (!b || b.is_active === false) continue;
+            const type = String(b.block_type || '').trim();
+            const payload = b.payload || {};
 
-        // Send plain welcome text
-        if (welcomeMessage.length > 0) {
-          await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+            try {
+              if (type === 'text') {
+                const t = String(payload.text || '').trim();
+                if (t) await this.bot.sendMessage(msg.chat.id, t, { parse_mode: 'HTML' });
+              } else if (type === 'link') {
+                const title = String(payload.title || '').trim() || 'Link';
+                const url = String(payload.url || '').trim();
+                if (url) {
+                  const html = `<a href="${url}">${title}</a>`;
+                  await this.bot.sendMessage(msg.chat.id, html, { parse_mode: 'HTML', disable_web_page_preview: false });
+                }
+              } else if (type === 'image') {
+                const url = String(payload.url || '').trim();
+                const caption = String(payload.caption || '').trim();
+                if (url) {
+                  await this.bot.sendPhoto(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
+                }
+              } else if (type === 'video') {
+                const url = String(payload.url || '').trim();
+                const caption = String(payload.caption || '').trim();
+                if (url) {
+                  await this.bot.sendVideo(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
+                }
+              } else if (type === 'question_flow') {
+                const slug = String(payload.slug || '').trim();
+                if (slug && this.flow) {
+                  await this.flow.startFlow({ chatId: msg.chat.id, userId: sender.id, slug, lang: userLang });
+                  startedWelcomeFlow = true;
+                  break; // stop sending more blocks; flow becomes interactive
+                }
+              }
+            } catch (e) {
+              logger.warn('Could not send welcome block', { type }, e);
+            }
+          }
+        } else {
+          // Legacy behavior
+          // Optionally send a welcome video first
+          if (welcomeVideo) {
+            try {
+              await this.bot.sendVideo(msg.chat.id, welcomeVideo);
+            } catch (e) {
+              logger.warn('Could not send welcome video', e);
+            }
+          }
+
+          // Optionally send a welcome image
+          if (welcomeImage) {
+            try {
+              await this.bot.sendPhoto(msg.chat.id, welcomeImage);
+            } catch (e) {
+              logger.warn('Could not send welcome image', e);
+            }
+          }
+
+          // Send plain welcome text
+          if (welcomeMessage.length > 0) {
+            await this.bot.sendMessage(msg.chat.id, welcomeMessage);
+          }
         }
 
         // Start onboarding questions (if not completed)
-        try {
-          const onboardingRes = await pool.query(
-            'SELECT onboarding_completed FROM telegram_users WHERE id = $1 LIMIT 1',
-            [parseInt(sender.id, 10)]
-          );
-          const done = !!onboardingRes.rows?.[0]?.onboarding_completed;
-          if (!done) {
-            await this.startOnboarding(msg.chat.id, sender, userLang);
+        // If a welcome flow was started from blocks, skip onboarding (to avoid mixing flows).
+        if (!startedWelcomeFlow) {
+          try {
+            const onboardingRes = await pool.query(
+              'SELECT onboarding_completed FROM telegram_users WHERE id = $1 LIMIT 1',
+              [parseInt(sender.id, 10)]
+            );
+            const done = !!onboardingRes.rows?.[0]?.onboarding_completed;
+            if (!done) {
+              await this.startOnboarding(msg.chat.id, sender, userLang);
+            }
+          } catch (e) {
+            // If onboarding tables/column aren't present, ignore
           }
-        } catch (e) {
-          // If onboarding tables/column aren't present, ignore
         }
       } catch (error) {
         logger.error('Error handling start command:', error);

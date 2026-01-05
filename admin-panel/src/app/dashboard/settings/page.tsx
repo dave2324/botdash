@@ -15,6 +15,10 @@ import {
   updateOnboardingQuestion,
   deleteOnboardingQuestion,
   getOnboardingAnswers,
+  getWelcomeBlocks,
+  saveWelcomeBlocks,
+  WelcomeBlock,
+  WelcomeBlockType,
   OnboardingQuestion,
   OnboardingAnswer
 } from '@/lib/api';
@@ -28,6 +32,9 @@ export default function SettingsPage() {
   const [welcomeText, setWelcomeText] = useState<string>('');
   const [welcomeImageUrl, setWelcomeImageUrl] = useState<string>('');
   const [welcomeVideoUrl, setWelcomeVideoUrl] = useState<string>('');
+
+  // New Welcome Builder (ordered blocks)
+  const [welcomeBlocks, setWelcomeBlocks] = useState<any[]>([]);
 
   const [onboardingQuestions, setOnboardingQuestions] = useState<OnboardingQuestion[]>([]);
   const [onboardingAnswers, setOnboardingAnswers] = useState<OnboardingAnswer[]>([]);
@@ -49,6 +56,17 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   useEffect(() => {
     fetchSettings();
+
+    // Load welcome blocks
+    (async () => {
+      try {
+        const wb = await getWelcomeBlocks();
+        setWelcomeBlocks(wb.blocks || []);
+      } catch {
+        // ignore if not configured
+      }
+    })();
+
     // Load onboarding data in background
     (async () => {
       try {
@@ -91,6 +109,20 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     try {
       setSaving(true);
+
+      // Save welcome blocks first
+      try {
+        const normalized: WelcomeBlock[] = (welcomeBlocks || []).map((b: any, idx: number) => ({
+          sort_order: typeof b.sort_order === 'number' ? b.sort_order : idx,
+          is_active: b.is_active !== false,
+          block_type: b.block_type as WelcomeBlockType,
+          payload: b.payload ?? {},
+        }));
+        await saveWelcomeBlocks(normalized);
+      } catch (e) {
+        // If welcome blocks fail, still allow settings save.
+        console.error('Error saving welcome blocks:', e);
+      }
 
       const extraUpdates = [
         { key: 'supported_languages', value: supportedLanguages },
@@ -228,12 +260,13 @@ export default function SettingsPage() {
         </motion.div>
       )}
 
-      {/* Welcome (Legacy + Multi-language) */}
+      {/* Welcome (Legacy + Builder) */}
       {activeTab === 'welcome' && (
         <div className="grid gap-4">
+          {/* Legacy welcome settings */}
           <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-sm font-medium text-gray-900">Welcome Message</h3>
-            
+            <h3 className="text-sm font-medium text-gray-900">Welcome Message (Legacy)</h3>
+
             <textarea
               value={welcomeText}
               onChange={(e) => setWelcomeText(e.target.value)}
@@ -328,6 +361,253 @@ export default function SettingsPage() {
                   </label>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-3 text-xs text-gray-500">
+              If you configure Welcome Builder rows below, the bot will use them for <code>/start</code>.
+            </div>
+          </div>
+
+          {/* Welcome Builder */}
+          <div className="p-4 rounded-lg bg-white shadow-sm border">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-900">Welcome Builder (Table)</h3>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
+                onClick={() => {
+                  const nextSort = (welcomeBlocks?.length || 0);
+                  setWelcomeBlocks([
+                    ...(welcomeBlocks || []),
+                    { sort_order: nextSort, is_active: true, block_type: 'text', payload: { text: '' } }
+                  ]);
+                }}
+              >
+                + Add Row
+              </button>
+            </div>
+
+            <div className="mt-3 overflow-auto">
+              <table className="min-w-full text-sm border">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="p-2 border">Order</th>
+                    <th className="p-2 border">Active</th>
+                    <th className="p-2 border">Type</th>
+                    <th className="p-2 border">Content</th>
+                    <th className="p-2 border">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(welcomeBlocks || []).map((b: any, idx: number) => (
+                    <tr key={idx} className="align-top">
+                      <td className="p-2 border w-16 text-center">{idx + 1}</td>
+                      <td className="p-2 border w-20 text-center">
+                        <input
+                          type="checkbox"
+                          checked={b.is_active !== false}
+                          onChange={(e) => {
+                            const copy = [...(welcomeBlocks || [])];
+                            copy[idx] = { ...copy[idx], is_active: e.target.checked };
+                            setWelcomeBlocks(copy);
+                          }}
+                        />
+                      </td>
+                      <td className="p-2 border w-44">
+                        <select
+                          className="w-full px-2 py-1 border rounded"
+                          value={b.block_type}
+                          onChange={(e) => {
+                            const t = e.target.value as WelcomeBlockType;
+                            const copy = [...(welcomeBlocks || [])];
+                            const payload =
+                              t === 'text'
+                                ? { text: '' }
+                                : t === 'link'
+                                  ? { title: '', url: '' }
+                                  : t === 'image'
+                                    ? { url: '', caption: '' }
+                                    : t === 'video'
+                                      ? { url: '', caption: '' }
+                                      : { slug: '' };
+                            copy[idx] = { ...copy[idx], block_type: t, payload };
+                            setWelcomeBlocks(copy);
+                          }}
+                        >
+                          <option value="text">Text</option>
+                          <option value="link">Link</option>
+                          <option value="image">Image</option>
+                          <option value="video">Video</option>
+                          <option value="question_flow">Question (Flow)</option>
+                        </select>
+                      </td>
+                      <td className="p-2 border">
+                        {b.block_type === 'text' && (
+                          <textarea
+                            className="w-full px-2 py-1 border rounded"
+                            rows={3}
+                            value={b.payload?.text || ''}
+                            onChange={(e) => {
+                              const copy = [...(welcomeBlocks || [])];
+                              copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), text: e.target.value } };
+                              setWelcomeBlocks(copy);
+                            }}
+                            placeholder="Text (HTML allowed)"
+                          />
+                        )}
+
+                        {b.block_type === 'link' && (
+                          <div className="grid gap-2">
+                            <input
+                              className="w-full px-2 py-1 border rounded"
+                              value={b.payload?.title || ''}
+                              onChange={(e) => {
+                                const copy = [...(welcomeBlocks || [])];
+                                copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), title: e.target.value } };
+                                setWelcomeBlocks(copy);
+                              }}
+                              placeholder="Link title"
+                            />
+                            <input
+                              className="w-full px-2 py-1 border rounded"
+                              value={b.payload?.url || ''}
+                              onChange={(e) => {
+                                const copy = [...(welcomeBlocks || [])];
+                                copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), url: e.target.value } };
+                                setWelcomeBlocks(copy);
+                              }}
+                              placeholder="https://example.com"
+                            />
+                          </div>
+                        )}
+
+                        {(b.block_type === 'image' || b.block_type === 'video') && (
+                          <div className="grid gap-2">
+                            <div className="flex gap-2">
+                              <input
+                                className="flex-1 px-2 py-1 border rounded"
+                                value={b.payload?.url || ''}
+                                onChange={(e) => {
+                                  const copy = [...(welcomeBlocks || [])];
+                                  copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), url: e.target.value } };
+                                  setWelcomeBlocks(copy);
+                                }}
+                                placeholder="Media URL or Telegram file_id"
+                              />
+
+                              <label className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 cursor-pointer whitespace-nowrap">
+                                Upload {b.block_type === 'image' ? 'Image' : 'Video'}
+                                <input
+                                  type="file"
+                                  accept={b.block_type === 'image' ? 'image/*' : 'video/*'}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    try {
+                                      setSaving(true);
+                                      const up = await uploadFile(file, 'welcome');
+                                      const copy = [...(welcomeBlocks || [])];
+                                      copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), url: up.url } };
+                                      setWelcomeBlocks(copy);
+                                      setMessage({ type: 'success', text: `${b.block_type === 'image' ? 'Image' : 'Video'} uploaded` });
+                                      setTimeout(() => setMessage(null), 2500);
+                                    } catch (err) {
+                                      setMessage({ type: 'error', text: 'Upload failed' });
+                                    } finally {
+                                      setSaving(false);
+                                      // allow re-upload of same file
+                                      e.currentTarget.value = '';
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+
+                            <input
+                              className="w-full px-2 py-1 border rounded"
+                              value={b.payload?.caption || ''}
+                              onChange={(e) => {
+                                const copy = [...(welcomeBlocks || [])];
+                                copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), caption: e.target.value } };
+                                setWelcomeBlocks(copy);
+                              }}
+                              placeholder="Caption (optional, HTML allowed)"
+                            />
+                          </div>
+                        )}
+
+                        {b.block_type === 'question_flow' && (
+                          <div className="grid gap-2">
+                            <input
+                              className="w-full px-2 py-1 border rounded"
+                              value={b.payload?.slug || ''}
+                              onChange={(e) => {
+                                const copy = [...(welcomeBlocks || [])];
+                                copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), slug: e.target.value } };
+                                setWelcomeBlocks(copy);
+                              }}
+                              placeholder="Flow slug (published)"
+                            />
+                            <div className="text-xs text-gray-500">
+                              This will start the published flow after previous welcome items.
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-2 border w-40">
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="px-2 py-1 border rounded hover:bg-gray-50"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              if (idx === 0) return;
+                              const copy = [...(welcomeBlocks || [])];
+                              const tmp = copy[idx - 1];
+                              copy[idx - 1] = copy[idx];
+                              copy[idx] = tmp;
+                              setWelcomeBlocks(copy);
+                            }}
+                          >
+                            ▲ Up
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 border rounded hover:bg-gray-50"
+                            disabled={idx === (welcomeBlocks?.length || 0) - 1}
+                            onClick={() => {
+                              const copy = [...(welcomeBlocks || [])];
+                              if (idx >= copy.length - 1) return;
+                              const tmp = copy[idx + 1];
+                              copy[idx + 1] = copy[idx];
+                              copy[idx] = tmp;
+                              setWelcomeBlocks(copy);
+                            }}
+                          >
+                            ▼ Down
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 py-1 border rounded text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              const copy = [...(welcomeBlocks || [])];
+                              copy.splice(idx, 1);
+                              setWelcomeBlocks(copy);
+                            }}
+                          >
+                            ✖ Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 text-xs text-gray-500">
+              Sent only on <code>/start</code>, in this order. Links are sent as clickable HTML.
             </div>
           </div>
         </div>

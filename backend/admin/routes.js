@@ -266,6 +266,68 @@ router.post('/broadcast-media', adminAuth, async (req, res) => {
   }
 });
 
+// --- WELCOME BLOCKS (ordered /start sequence) ---
+
+// GET /admin/welcome-blocks
+router.get('/welcome-blocks', adminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM welcome_blocks
+       ORDER BY sort_order ASC, id ASC`
+    );
+    res.json({ blocks: result.rows });
+  } catch (error) {
+    console.error('Error fetching welcome blocks:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /admin/welcome-blocks
+// Body: { blocks: Array<{ id?: number, sort_order: number, is_active: boolean, block_type: string, payload: any }> }
+router.put('/welcome-blocks', adminAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { blocks } = req.body || {};
+    if (!Array.isArray(blocks)) {
+      return res.status(400).json({ message: 'blocks must be an array' });
+    }
+
+    await client.query('BEGIN');
+
+    // Replace all rows (simple + predictable)
+    await client.query('DELETE FROM welcome_blocks');
+
+    for (const b of blocks) {
+      const sort_order = Number(b.sort_order) || 0;
+      const is_active = b.is_active !== false;
+      const block_type = String(b.block_type || '').trim();
+      const payload = b.payload ?? {};
+
+      if (!block_type) continue;
+
+      await client.query(
+        `INSERT INTO welcome_blocks (sort_order, is_active, block_type, payload, updated_at)
+         VALUES ($1,$2,$3,$4,NOW())`,
+        [sort_order, is_active, block_type, JSON.stringify(payload)]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const result = await pool.query(
+      `SELECT * FROM welcome_blocks
+       ORDER BY sort_order ASC, id ASC`
+    );
+    res.json({ blocks: result.rows });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error saving welcome blocks:', error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // --- ONBOARDING QUESTIONS ---
 
 router.get('/onboarding/questions', adminAuth, async (req, res) => {
