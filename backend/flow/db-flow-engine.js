@@ -20,6 +20,49 @@ class DbFlowEngine {
     this.flowCache = new Map(); // key: versionId
   }
 
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  calcHumanDelay(text) {
+    const len = typeof text === 'string' ? text.length : 0;
+    // 350ms base + 18ms per char, clamp 400..2200
+    return Math.max(400, Math.min(2200, 350 + len * 18));
+  }
+
+  async humanSendText(chatId, text, opts) {
+    try {
+      await this.bot.sendChatAction(chatId, 'typing');
+    } catch {}
+    await this.sleep(this.calcHumanDelay(text));
+    return this.bot.sendMessage(chatId, text, opts);
+  }
+
+  async humanSendPhoto(chatId, fileIdOrUrl, opts) {
+    try {
+      await this.bot.sendChatAction(chatId, 'upload_photo');
+    } catch {}
+    await this.sleep(850);
+    return this.bot.sendPhoto(chatId, fileIdOrUrl, opts);
+  }
+
+  async humanSendVideo(chatId, fileIdOrUrl, opts) {
+    try {
+      await this.bot.sendChatAction(chatId, 'upload_video');
+    } catch {}
+    await this.sleep(950);
+    return this.bot.sendVideo(chatId, fileIdOrUrl, opts);
+  }
+
+  async humanSendDocument(chatId, fileIdOrUrl, opts) {
+    try {
+      await this.bot.sendChatAction(chatId, 'upload_document');
+    } catch {}
+    await this.sleep(900);
+    return this.bot.sendDocument(chatId, fileIdOrUrl, opts);
+  }
+
+
   t(i18n, lang, fallback = '') {
     if (!i18n) return fallback;
     return i18n[lang] ?? i18n.en ?? fallback;
@@ -106,11 +149,11 @@ class DbFlowEngine {
   async startFlow({ chatId, userId, slug, lang = 'en' }) {
     const compiled = await this.loadPublishedFlowBySlug(slug);
     if (!compiled) {
-      await this.bot.sendMessage(chatId, '⚠️ No published flow is configured.');
+      await this.humanSendText(chatId, '⚠️ No published flow is configured.');
       return;
     }
     if (!compiled.start) {
-      await this.bot.sendMessage(chatId, '⚠️ Flow has no start node. Ask admin to set start_node_key.');
+      await this.humanSendText(chatId, '⚠️ Flow has no start node. Ask admin to set start_node_key.');
       return;
     }
 
@@ -171,7 +214,7 @@ class DbFlowEngine {
 
     const compiled = await this.loadPublishedFlowBySlug(session.flow_id);
     if (!compiled) {
-      await this.bot.sendMessage(chatId, '⚠️ Flow not available.');
+      await this.humanSendText(chatId, '⚠️ Flow not available.');
       await this.stopFlow(chatId);
       return;
     }
@@ -180,7 +223,7 @@ class DbFlowEngine {
     const node = compiled.nodesByKey.get(nodeKey);
 
     if (!node) {
-      await this.bot.sendMessage(chatId, '⚠️ Flow error: missing node.');
+      await this.humanSendText(chatId, '⚠️ Flow error: missing node.');
       await this.stopFlow(chatId);
       return;
     }
@@ -201,7 +244,7 @@ class DbFlowEngine {
       ];
       inline_keyboard.push([backBtn]);
 
-      await this.bot.sendMessage(chatId, text || 'Please choose:', { reply_markup: { inline_keyboard } });
+      await this.humanSendText(chatId, text || 'Please choose:', { reply_markup: { inline_keyboard } });
       return;
     }
 
@@ -227,23 +270,23 @@ class DbFlowEngine {
         backBtn
       ]);
 
-      await this.bot.sendMessage(chatId, text || 'Select one or more:', { reply_markup: { inline_keyboard } });
+      await this.humanSendText(chatId, text || 'Select one or more:', { reply_markup: { inline_keyboard } });
       return;
     }
 
     if (node.type === 'file') {
-      await this.bot.sendMessage(chatId, (text || 'Please send a file (photo/video/document).') + '\n\nYou can send: photo, video, or document.');
+      await this.humanSendText(chatId, (text || 'Please send a file (photo/video/document).') + '\n\nYou can send: photo, video, or document.');
       return;
     }
 
     if (node.type === 'end') {
-      if (text) await this.bot.sendMessage(chatId, text);
+      if (text) await this.humanSendText(chatId, text);
       await this.stopFlow(chatId);
       return;
     }
 
     // text/number/date
-    await this.bot.sendMessage(chatId, text || 'Please type your answer:');
+    await this.humanSendText(chatId, text || 'Please type your answer:');
   }
 
   async transition({ chatId, lang = 'en', answer, media }) {
@@ -267,7 +310,7 @@ class DbFlowEngine {
       const opts = compiled.optionsByNodeKey.get(node.node_key) || [];
       const opt = opts.find(o => String(o.option_key) === String(answer));
       if (!opt) {
-        await this.bot.sendMessage(chatId, 'Please choose one of the options.');
+        await this.humanSendText(chatId, 'Please choose one of the options.');
         return true;
       }
       answers[saveKey] = opt.value ?? opt.option_key;
@@ -275,14 +318,14 @@ class DbFlowEngine {
     } else if (node.type === 'text' || node.type === 'number' || node.type === 'date') {
       const err = this.validateNodeInput(node, answer);
       if (err) {
-        await this.bot.sendMessage(chatId, err);
+        await this.humanSendText(chatId, err);
         return true;
       }
       answers[saveKey] = String(answer).trim();
       nextKey = node.next_node_key;
     } else if (node.type === 'file') {
       if (!media || !media.type || !media.file_id) {
-        await this.bot.sendMessage(chatId, 'Please send a photo/video/document for this step.');
+        await this.humanSendText(chatId, 'Please send a photo/video/document for this step.');
         return true;
       }
       answers[saveKey] = { type: media.type, file_id: media.file_id, file_unique_id: media.file_unique_id };
@@ -354,7 +397,7 @@ class DbFlowEngine {
     const saveKey = node.save_as || node.node_key;
     const selected = Array.isArray(answers[saveKey]) ? answers[saveKey] : [];
     if (node.required && selected.length === 0) {
-      await this.bot.sendMessage(chatId, 'Please select at least one option.');
+      await this.humanSendText(chatId, 'Please select at least one option.');
       return true;
     }
 

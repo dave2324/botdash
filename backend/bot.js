@@ -7,6 +7,37 @@ const { DbFlowEngine } = require('./flow/db-flow-engine');
 class TelegramBot {
   constructor(botToken) {
     this.botToken = botToken;
+
+    // Human-like send helpers (typing/upload action + small delay)
+    this.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    this.calcHumanDelay = (text) => {
+      const len = typeof text === 'string' ? text.length : 0;
+      return Math.max(400, Math.min(2200, 350 + len * 18));
+    };
+
+    this.humanSendText = async (chatId, text, opts) => {
+      try { await this.bot.sendChatAction(chatId, 'typing'); } catch {}
+      await this.sleep(this.calcHumanDelay(text));
+      return this.bot.sendMessage(chatId, text, opts);
+    };
+
+    this.humanSendPhoto = async (chatId, fileIdOrUrl, opts) => {
+      try { await this.bot.sendChatAction(chatId, 'upload_photo'); } catch {}
+      await this.sleep(850);
+      return this.bot.sendPhoto(chatId, fileIdOrUrl, opts);
+    };
+
+    this.humanSendVideo = async (chatId, fileIdOrUrl, opts) => {
+      try { await this.bot.sendChatAction(chatId, 'upload_video'); } catch {}
+      await this.sleep(950);
+      return this.bot.sendVideo(chatId, fileIdOrUrl, opts);
+    };
+
+    this.humanSendDocument = async (chatId, fileIdOrUrl, opts) => {
+      try { await this.bot.sendChatAction(chatId, 'upload_document'); } catch {}
+      await this.sleep(900);
+      return this.bot.sendDocument(chatId, fileIdOrUrl, opts);
+    };
     this.bot = null;
     this.isReady = false;
     this.botUsername = null; // cached from getMe()
@@ -1033,25 +1064,25 @@ class TelegramBot {
             try {
               if (type === 'text') {
                 const t = String(payload.text || '').trim();
-                if (t) await this.bot.sendMessage(msg.chat.id, t, { parse_mode: 'HTML' });
+                if (t) await this.humanSendText(msg.chat.id, t, { parse_mode: 'HTML' });
               } else if (type === 'link') {
                 const title = String(payload.title || '').trim() || 'Link';
                 const url = String(payload.url || '').trim();
                 if (url) {
                   const html = `<a href="${url}">${title}</a>`;
-                  await this.bot.sendMessage(msg.chat.id, html, { parse_mode: 'HTML', disable_web_page_preview: false });
+                  await this.humanSendText(msg.chat.id, html, { parse_mode: 'HTML', disable_web_page_preview: false });
                 }
               } else if (type === 'image') {
                 const url = String(payload.url || '').trim();
                 const caption = String(payload.caption || '').trim();
                 if (url) {
-                  await this.bot.sendPhoto(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
+                  await this.humanSendPhoto(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
                 }
               } else if (type === 'video') {
                 const url = String(payload.url || '').trim();
                 const caption = String(payload.caption || '').trim();
                 if (url) {
-                  await this.bot.sendVideo(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
+                  await this.humanSendVideo(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
                 }
               } else if (type === 'question_flow') {
                 const slug = String(payload.slug || '').trim();
@@ -1079,7 +1110,7 @@ class TelegramBot {
           const sender = msg.from;
           const fallbackMessage = `👋 Welcome to Dashbot, ${sender.first_name || ''}!`;
 
-          await this.bot.sendMessage(msg.chat.id, fallbackMessage);
+          await this.humanSendText(msg.chat.id, fallbackMessage);
         } catch (fallbackError) {
           logger.error('Fallback message also failed:', fallbackError);
         }
