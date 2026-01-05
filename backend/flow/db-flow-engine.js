@@ -183,10 +183,13 @@ class DbFlowEngine {
 
     if (node.type === 'single_choice') {
       const opts = compiled.optionsByNodeKey.get(node.node_key) || [];
-      const inline_keyboard = opts.map((o) => ([{
-        text: this.t(o.label_i18n, lang, o.option_key),
-        callback_data: `flow:${session.flow_id}:${node.node_key}:${o.option_key}`
-      }]));
+      // Put all options in ONE ROW
+      const inline_keyboard = [
+        opts.map((o) => ({
+          text: this.t(o.label_i18n, lang, o.option_key),
+          callback_data: `flow:${session.flow_id}:${node.node_key}:${o.option_key}`
+        }))
+      ];
       inline_keyboard.push([backBtn]);
 
       await this.bot.sendMessage(chatId, text || 'Please choose:', { reply_markup: { inline_keyboard } });
@@ -200,12 +203,16 @@ class DbFlowEngine {
       const key = node.save_as || node.node_key;
       const selected = Array.isArray(answers[key]) ? answers[key] : [];
 
-      const inline_keyboard = opts.map((o) => {
-        const isSel = selected.includes(o.option_key);
-        const label = `${isSel ? '✅ ' : ''}${this.t(o.label_i18n, lang, o.option_key)}`;
-        return [{ text: label, callback_data: `flowmulti:${session.flow_id}:${node.node_key}:${o.option_key}` }];
-      });
+      // Put all toggles in ONE ROW
+      const inline_keyboard = [
+        opts.map((o) => {
+          const isSel = selected.includes(o.option_key);
+          const label = `${isSel ? '✅ ' : ''}${this.t(o.label_i18n, lang, o.option_key)}`;
+          return { text: label, callback_data: `flowmulti:${session.flow_id}:${node.node_key}:${o.option_key}` };
+        })
+      ];
 
+      // Keep actions on their own row
       inline_keyboard.push([
         { text: 'Continue ➡️', callback_data: `flowmultidone:${session.flow_id}:${node.node_key}` },
         backBtn

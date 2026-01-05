@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +36,10 @@ export default function FlowEditPage() {
   const [version, setVersion] = useState<any>(null);
   const [nodes, setNodes] = useState<any[]>([]);
   const [options, setOptions] = useState<any[]>([]);
+  const [savingAll, setSavingAll] = useState(false);
+
+  // Collapse/expand options per question
+  const [collapsedOptions, setCollapsedOptions] = useState<Record<string, boolean>>({});
 
   const nodesById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
   const optionsByNodeId = useMemo(() => {
@@ -164,6 +168,56 @@ export default function FlowEditPage() {
     await loadVersion(selectedVersionId!);
   };
 
+  const onSaveFlowAll = async () => {
+    if (!selectedVersionId) return;
+
+    try {
+      setSavingAll(true);
+
+      // Save all questions first (ensures node ids exist)
+      const nodesSorted = [...nodes].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      for (const n of nodesSorted) {
+        if (!n?.node_key) continue;
+        await upsertFlowNode(selectedVersionId, n.node_key, n);
+      }
+
+      // Save start node key (version settings)
+      if (version?.start_node_key) {
+        await setFlowStartNode(selectedVersionId, version.start_node_key);
+      }
+
+      // Reload so we have the latest ids
+      await loadVersion(selectedVersionId);
+
+      // Save all options (for saved nodes)
+      const currentNodes = await getFlowVersion(flowId, selectedVersionId);
+      const nodeKeyToId = new Map((currentNodes.nodes || []).map((n: any) => [n.node_key, n.id]));
+
+      const optionsSorted = [...options].sort((a, b) => {
+        const na = (a.flow_node_id ?? 0) - (b.flow_node_id ?? 0);
+        if (na !== 0) return na;
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      });
+
+      for (const o of optionsSorted) {
+        if (!o) continue;
+        // If option is linked by node_key instead of flow_node_id, repair it
+        if (!o.flow_node_id && o.node_key && nodeKeyToId.has(o.node_key)) {
+          o.flow_node_id = nodeKeyToId.get(o.node_key);
+        }
+        if (!o.flow_node_id || !o.option_key) continue;
+        await upsertFlowOption(o.flow_node_id, o.option_key, o);
+      }
+
+      toast.success('✅ Flow saved');
+      await loadVersion(selectedVersionId);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || e?.message || 'Failed to save flow');
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   if (!flow) return <div>Loading...</div>;
 
   return (
@@ -183,6 +237,13 @@ export default function FlowEditPage() {
           </Button>
 
           <div className="ml-auto flex gap-2 items-center">
+            <Button
+              onClick={onSaveFlowAll}
+              disabled={!selectedVersionId || savingAll}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+            >
+              {savingAll ? 'Saving...' : 'Save Flow'}
+            </Button>
             <Select value={selectedVersionId ? String(selectedVersionId) : ''} onValueChange={(v) => setSelectedVersionId(Number(v))}>
               <SelectTrigger className="w-[220px]">
                 <SelectValue placeholder="Select version" />
@@ -233,11 +294,24 @@ export default function FlowEditPage() {
             <Button
               variant="outline"
               onClick={() => {
-                const nk = prompt('New Question ID? (unique)');
-                if (!nk || !selectedVersionId) return;
+                if (!selectedVersionId) return;
+
+                // Auto-generate a unique Question ID (no popup).
+                const suffix = Math.random().toString(36).slice(2, 8);
+                const nk = `q_${Date.now()}_${suffix}`;
+
+                // Temp key so React keys stay stable while user edits Question ID.
+                const tmp =
+                  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                    ? // @ts-ignore
+                      crypto.randomUUID()
+                    : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+                // Insert new question at the TOP
+                const bumped = nodes.map((x) => ({ ...x, sort_order: (x.sort_order ?? 0) + 1 }));
                 setNodes([
-                  ...nodes,
                   {
+                    __tempKey: tmp,
                     flow_version_id: selectedVersionId,
                     node_key: nk,
                     type: 'text',
@@ -245,12 +319,13 @@ export default function FlowEditPage() {
                     help_i18n: {},
                     required: true,
                     next_node_key: null,
-                    sort_order: nodes.length
-                  }
+                    sort_order: 0
+                  },
+                  ...bumped
                 ]);
               }}
             >
-              Add Question
+              + Add Question
             </Button>
           </div>
 
@@ -261,159 +336,173 @@ export default function FlowEditPage() {
                 <TableHead>Question Type</TableHead>
                 <TableHead>Question text (English)</TableHead>
                 <TableHead>Go to Question ID (Next)</TableHead>
-                <TableHead>Save Answer As</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {nodes.map((n) => (
-                <TableRow key={n.node_key}>
-                  <TableCell className="font-mono">{n.node_key}</TableCell>
-                  {/* Question ID shown above uses internal field node_key; label is user-friendly */}
-                  <TableCell>
-                    <Select value={n.type} onValueChange={(v) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, type: v } : x))}>
-                      <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {NODE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Textarea
-                      value={n.prompt_i18n?.en || ''}
-                      onChange={(e) =>
-                        setNodes(
-                          nodes.map((x) =>
-                            x.node_key === n.node_key
-                              ? { ...x, prompt_i18n: { ...(x.prompt_i18n || {}), en: e.target.value } }
-                              : x
-                          )
-                        )
-                      }
-                      className="min-w-[260px]"
-                      rows={2}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
-                  </TableCell>
-                  <TableCell>
-                    <Input value={n.save_as || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, save_as: e.target.value || null } : x))} />
-                  </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      size="sm"
-                      onClick={() => onUpsertNode(n.node_key)}
-                      className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                    >
-                      Save Question
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>
-                      Delete Question
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {nodes
+                .slice()
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                .map((n) => {
+                const isChoice = n.type === 'single_choice' || n.type === 'multi_choice';
+                const optList = n.id ? (optionsByNodeId.get(n.id) || []) : [];
+                const nKey = n.id ? `id-${n.id}` : `tmp-${n.__tempKey || n.node_key}`;
+                const isCollapsed = collapsedOptions[n.node_key] !== false; // default collapsed
+
+                return (
+                  <Fragment key={nKey}>
+                    <TableRow>
+                      <TableCell className="font-mono">
+                        {!n.id ? (
+                          <Input
+                            value={n.node_key}
+                            onChange={(e) => {
+                              const nextKey = e.target.value;
+                              setNodes(nodes.map((x) => (x === n ? { ...x, node_key: nextKey } : x)));
+                            }}
+                            placeholder="Question ID"
+                          />
+                        ) : (
+                          n.node_key
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Select value={n.type} onValueChange={(v) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, type: v } : x))}>
+                          <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {NODE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Textarea
+                          value={n.prompt_i18n?.en || ''}
+                          onChange={(e) =>
+                            setNodes(
+                              nodes.map((x) =>
+                                x.node_key === n.node_key
+                                  ? { ...x, prompt_i18n: { ...(x.prompt_i18n || {}), en: e.target.value } }
+                                  : x
+                              )
+                            )
+                          }
+                          className="min-w-[260px]"
+                          rows={2}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        {isChoice && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setCollapsedOptions((prev) => ({
+                                ...prev,
+                                [n.node_key]: !(prev[n.node_key] !== false),
+                              }))
+                            }
+                          >
+                            {isCollapsed ? 'Show options' : 'Hide options'}
+                          </Button>
+                        )}
+                        <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>
+                          Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    {isChoice && !isCollapsed && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="bg-muted/30">
+                          {!n.id ? (
+                            <div className="text-sm text-muted-foreground">
+                              Save this question first to enable options.
+                            </div>
+                          ) : (
+                            <div className="border rounded p-3 bg-background">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="font-semibold">Options for: {n.node_key}</div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const existingKeys = new Set((optList || []).map((x: any) => String(x.option_key)));
+                                    let i = (optList || []).length + 1;
+                                    let key = `opt_${i}`;
+                                    while (existingKeys.has(key)) {
+                                      i += 1;
+                                      key = `opt_${i}`;
+                                    }
+
+                                    setOptions([
+                                      ...options,
+                                      {
+                                        flow_node_id: n.id,
+                                        option_key: key,
+                                        label_i18n: { en: '' },
+                                        next_node_key: null,
+                                        sort_order: (optList || []).length
+                                      }
+                                    ]);
+                                  }}
+                                >
+                                  + Add Row
+                                </Button>
+                              </div>
+
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-16">Order</TableHead>
+                                    <TableHead>Choice Key</TableHead>
+                                    <TableHead>Button text (English)</TableHead>
+                                    <TableHead>Go to Question ID (Next)</TableHead>
+                                    <TableHead className="w-[220px]"></TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(optList || [])
+                                    .slice()
+                                    .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                    .map((o: any) => (
+                                    <TableRow key={o.option_key}>
+                                      <TableCell className="text-center text-xs text-muted-foreground">{(o.sort_order ?? 0) + 1}</TableCell>
+                                      <TableCell className="font-mono">{o.option_key}</TableCell>
+                                      <TableCell>
+                                        <Input value={o.label_i18n?.en || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, label_i18n: { ...(x.label_i18n||{}), en: e.target.value } } : x))} />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Input value={o.next_node_key || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, next_node_key: e.target.value || null } : x))} />
+                                      </TableCell>
+                                      <TableCell className="text-right space-x-2">
+                                        <Button size="sm" variant="destructive" onClick={() => onDeleteOption(n.id, o.option_key)}>
+                                          Delete
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                Note: Telegram buttons will be shown in one row.
+                              </div>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Answer Choices (only for Single Choice / Multi Choice questions)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {nodes
-            .filter((n) => (n.type === 'single_choice' || n.type === 'multi_choice'))
-            .map((n) => {
-              // If a question is not saved yet, it won't have a numeric id.
-              // Options are stored by flow_node_id, so we must save the question first.
-              if (!n.id) {
-                return (
-                  <div key={n.node_key} className="border rounded p-3">
-                    <div className="font-semibold">Question: {n.node_key}</div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      Save this question first to enable options.
-                    </div>
-                  </div>
-                );
-              }
-
-              const node = nodesById.get(n.id);
-              if (!node) return null;
-              const list = optionsByNodeId.get(node.id) || [];
-              return (
-                <div key={node.node_key} className="border rounded p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="font-semibold">Question: {node.node_key}</div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const ok = prompt('New choice key? (e.g. A, 1, yes)');
-                        if (!ok) return;
-                        setOptions([
-                          ...options,
-                          {
-                            flow_node_id: node.id,
-                            option_key: ok,
-                            label_i18n: { en: ok },
-                            value: ok,
-                            next_node_key: null,
-                            sort_order: list.length
-                          }
-                        ]);
-                      }}
-                    >
-                      Add Option
-                    </Button>
-                  </div>
-
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Choice Key</TableHead>
-                        <TableHead>Button text (English)</TableHead>
-                        <TableHead>Saved value</TableHead>
-                        <TableHead>Go to Question ID (Next)</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {list.map((o) => (
-                        <TableRow key={o.option_key}>
-                          <TableCell className="font-mono">{o.option_key}</TableCell>
-                          <TableCell>
-                            <Input value={o.label_i18n?.en || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===node.id && x.option_key===o.option_key) ? { ...x, label_i18n: { ...(x.label_i18n||{}), en: e.target.value } } : x))} />
-                          </TableCell>
-                          <TableCell>
-                            <Input value={o.value || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===node.id && x.option_key===o.option_key) ? { ...x, value: e.target.value } : x))} />
-                          </TableCell>
-                          <TableCell>
-                            <Input value={o.next_node_key || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===node.id && x.option_key===o.option_key) ? { ...x, next_node_key: e.target.value || null } : x))} />
-                          </TableCell>
-                          <TableCell className="text-right space-x-2">
-                            <Button
-                              size="sm"
-                              onClick={() => onUpsertOption(node.id, o.option_key)}
-                              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                            >
-                              Save Option
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => onDeleteOption(node.id, o.option_key)}>
-                              Delete Option
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              );
-            })}
-        </CardContent>
-      </Card>
     </div>
   );
 }

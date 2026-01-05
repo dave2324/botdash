@@ -263,115 +263,10 @@ export default function SettingsPage() {
       {/* Welcome (Legacy + Builder) */}
       {activeTab === 'welcome' && (
         <div className="grid gap-4">
-          {/* Legacy welcome settings */}
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-sm font-medium text-gray-900">Welcome Message (Legacy)</h3>
-
-            <textarea
-              value={welcomeText}
-              onChange={(e) => setWelcomeText(e.target.value)}
-              rows={6}
-              className="w-full mt-3 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-              placeholder="Welcome to our bot!"
-            />
-
-            <div className="mt-4 grid gap-3">
-              <div>
-                {welcomeImageUrl && (
-                  <div className="mt-2 mb-2">
-                    <img
-                      src={welcomeImageUrl}
-                      alt="Welcome preview"
-                      className="max-h-40 rounded border border-gray-200 object-contain bg-gray-50"
-                    />
-                  </div>
-                )}
-                <label className="text-sm font-medium text-gray-900">Welcome Image URL</label>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-                    value={welcomeImageUrl}
-                    onChange={(e) => setWelcomeImageUrl(e.target.value)}
-                    placeholder="https://... or Telegram file_id"
-                  />
-                  <label className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 cursor-pointer">
-                    Upload Image
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          setSaving(true);
-                          const up = await uploadFile(file, 'welcome');
-                          setWelcomeImageUrl(up.url);
-                          setMessage({ type: 'success', text: 'Welcome image uploaded' });
-                        } catch (err) {
-                          setMessage({ type: 'error', text: 'Image upload failed' });
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                {welcomeVideoUrl && (
-                  <div className="mt-2 mb-2">
-                    <video
-                      src={welcomeVideoUrl}
-                      controls
-                      className="max-h-56 rounded border border-gray-200 bg-black"
-                    />
-                  </div>
-                )}
-                <label className="text-sm font-medium text-gray-900">Welcome Video URL</label>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-                    value={welcomeVideoUrl}
-                    onChange={(e) => setWelcomeVideoUrl(e.target.value)}
-                    placeholder="https://... or Telegram file_id"
-                  />
-                  <label className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 cursor-pointer">
-                    Upload Video
-                    <input
-                      type="file"
-                      accept="video/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          setSaving(true);
-                          const up = await uploadFile(file, 'welcome');
-                          setWelcomeVideoUrl(up.url);
-                          setMessage({ type: 'success', text: 'Welcome video uploaded' });
-                        } catch (err) {
-                          setMessage({ type: 'error', text: 'Video upload failed' });
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 text-xs text-gray-500">
-              If you configure Welcome Builder rows below, the bot will use them for <code>/start</code>.
-            </div>
-          </div>
-
           {/* Welcome Builder */}
           <div className="p-4 rounded-lg bg-white shadow-sm border">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900">Welcome Builder (Table)</h3>
+              <h3 className="text-sm font-medium text-gray-900">Welcome Messages</h3>
               <button
                 type="button"
                 className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
@@ -452,7 +347,7 @@ export default function SettingsPage() {
                               copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), text: e.target.value } };
                               setWelcomeBlocks(copy);
                             }}
-                            placeholder="Text (HTML allowed)"
+                            placeholder="Text content"
                           />
                         )}
 
@@ -492,7 +387,7 @@ export default function SettingsPage() {
                                   copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), url: e.target.value } };
                                   setWelcomeBlocks(copy);
                                 }}
-                                placeholder="Media URL or Telegram file_id"
+                                placeholder="Media URL"
                               />
 
                               <label className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 cursor-pointer whitespace-nowrap">
@@ -532,7 +427,7 @@ export default function SettingsPage() {
                                 copy[idx] = { ...copy[idx], payload: { ...(copy[idx].payload || {}), caption: e.target.value } };
                                 setWelcomeBlocks(copy);
                               }}
-                              placeholder="Caption (optional, HTML allowed)"
+                              placeholder="Caption (optional)"
                             />
                           </div>
                         )}
@@ -606,9 +501,7 @@ export default function SettingsPage() {
               </table>
             </div>
 
-            <div className="mt-3 text-xs text-gray-500">
-              Sent only on <code>/start</code>, in this order. Links are sent as clickable HTML.
-            </div>
+      
           </div>
         </div>
       )}

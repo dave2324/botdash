@@ -914,7 +914,13 @@ class TelegramBot {
 
     if (q.type === 'single_choice' && q.options_translations) {
       const optionsByLang = q.options_translations?.[lang] || q.options_translations?.en || {};
-      const inline_keyboard = Object.entries(optionsByLang).map(([key, label]) => ([{ text: String(label), callback_data: `onb:${q.id}:${key}` }]));
+      // Put onboarding options in ONE ROW
+      const inline_keyboard = [
+        Object.entries(optionsByLang).map(([key, label]) => ({
+          text: String(label),
+          callback_data: `onb:${q.id}:${key}`
+        }))
+      ];
 
       await this.bot.sendMessage(chatId, questionText || 'Please choose:', {
         reply_markup: { inline_keyboard }
@@ -983,10 +989,8 @@ class TelegramBot {
           welcomeBlocks = [];
         }
 
-        // Plain welcome settings fallback (legacy)
-        const welcomeText = String((await this.getSettingValue('welcome_text')) ?? '').trim();
-        const welcomeImage = String((await this.getSettingValue('welcome_image_url')) ?? '').trim() || null;
-        const welcomeVideo = String((await this.getSettingValue('welcome_video_url')) ?? '').trim() || null;
+        // NOTE: Legacy welcome settings are intentionally ignored.
+        // /start should respond ONLY from welcome_blocks configured in Admin Panel.
 
         // Collect variables for template replacement
         const points = registrationResult.success ? (registrationResult.user.points || 0) : 0;
@@ -1015,7 +1019,7 @@ class TelegramBot {
           }
         }
 
-        const welcomeMessage = welcomeText;
+        const welcomeMessage = '';
 
         let startedWelcomeFlow = false;
 
@@ -1062,29 +1066,8 @@ class TelegramBot {
             }
           }
         } else {
-          // Legacy behavior
-          // Optionally send a welcome video first
-          if (welcomeVideo) {
-            try {
-              await this.bot.sendVideo(msg.chat.id, welcomeVideo);
-            } catch (e) {
-              logger.warn('Could not send welcome video', e);
-            }
-          }
-
-          // Optionally send a welcome image
-          if (welcomeImage) {
-            try {
-              await this.bot.sendPhoto(msg.chat.id, welcomeImage);
-            } catch (e) {
-              logger.warn('Could not send welcome image', e);
-            }
-          }
-
-          // Send plain welcome text
-          if (welcomeMessage.length > 0) {
-            await this.bot.sendMessage(msg.chat.id, welcomeMessage);
-          }
+          // No welcome blocks configured (or table missing). Do nothing.
+          // This ensures deleted/empty table does not fall back to old welcome settings.
         }
 
         // Start onboarding questions (if not completed)
