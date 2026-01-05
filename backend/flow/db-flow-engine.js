@@ -94,6 +94,15 @@ class DbFlowEngine {
     return compiled;
   }
 
+  async getChoiceLabel({ slug, nodeKey, optionKey, lang = 'en' }) {
+    const compiled = await this.loadPublishedFlowBySlug(slug);
+    if (!compiled) return optionKey;
+    const opts = compiled.optionsByNodeKey.get(nodeKey) || [];
+    const o = opts.find((x) => String(x.option_key) === String(optionKey));
+    if (!o) return optionKey;
+    return this.t(o.label_i18n, lang, optionKey);
+  }
+
   async startFlow({ chatId, userId, slug, lang = 'en' }) {
     const compiled = await this.loadPublishedFlowBySlug(slug);
     if (!compiled) {
@@ -287,7 +296,7 @@ class DbFlowEngine {
     }
 
     if (!nextKey) {
-      await this.bot.sendMessage(chatId, '⚠️ Flow is missing next step.');
+      // No next step configured: silently stop the flow (no user-facing error)
       await this.stopFlow(chatId);
       return true;
     }
@@ -351,7 +360,7 @@ class DbFlowEngine {
 
     const nextKey = node.next_node_key;
     if (!nextKey) {
-      await this.bot.sendMessage(chatId, '⚠️ Flow is missing next step.');
+      // No next step configured: silently stop the flow (no user-facing error)
       await this.stopFlow(chatId);
       return true;
     }

@@ -1070,22 +1070,8 @@ class TelegramBot {
           // This ensures deleted/empty table does not fall back to old welcome settings.
         }
 
-        // Start onboarding questions (if not completed)
-        // If a welcome flow was started from blocks, skip onboarding (to avoid mixing flows).
-        if (!startedWelcomeFlow) {
-          try {
-            const onboardingRes = await pool.query(
-              'SELECT onboarding_completed FROM telegram_users WHERE id = $1 LIMIT 1',
-              [parseInt(sender.id, 10)]
-            );
-            const done = !!onboardingRes.rows?.[0]?.onboarding_completed;
-            if (!done) {
-              await this.startOnboarding(msg.chat.id, sender, userLang);
-            }
-          } catch (e) {
-            // If onboarding tables/column aren't present, ignore
-          }
-        }
+        // NOTE: onboarding is disabled. Bot should respond only to /start welcome blocks.
+        // (No automatic onboarding or other command responses.)
       } catch (error) {
         logger.error('Error handling start command:', error);
         // Fallback to plain message without buttons if markup fails
@@ -1138,29 +1124,16 @@ class TelegramBot {
           }
         }
 
-        // Ignore commands (outside flow)
-        if (!msg || !msg.chat || !msg.text || String(msg.text).startsWith('/')) return;
-
-        const st = this.chatStates.get(chatId);
-        if (!st || st.mode !== 'onboarding') return;
-
-        const q = st.questions[st.questionIndex];
-        if (!q) return;
-
-        // Save answer
-        await this.saveOnboardingAnswer(st.userId, q.id, { answer_text: String(msg.text) });
-
-        // Next
-        st.questionIndex += 1;
-        this.chatStates.set(chatId, st);
-        await this.askNextOnboardingQuestion(chatId);
+        // Outside a flow, ignore ALL messages (no replies). Only /start should respond.
+        return;
       } catch (e) {
         // keep silent
       }
     });
 
-    // Start a decision-tree flow (example: /flow)
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/flow(?:\s+(.*))?/, async (msg, match) => {
+      return;
       try {
         const chatId = msg.chat.id;
         const sender = msg.from;
@@ -1257,6 +1230,7 @@ class TelegramBot {
 
     // Cancel current flow
     this.bot.onText(/^\/flowcancel$/, async (msg) => {
+      return;
       try {
         if (this.flow) await this.flow.stopFlow(msg.chat.id);
         await this.bot.sendMessage(msg.chat.id, '✅ Flow cancelled.');
@@ -1265,6 +1239,7 @@ class TelegramBot {
 
     // Restart flow
     this.bot.onText(/^\/flowrestart$/, async (msg) => {
+      return;
       try {
         const sender = msg.from;
         const userLang = await this.getUserLanguage(sender.id, sender.language_code);
@@ -1327,8 +1302,9 @@ class TelegramBot {
       }
     });
 
-    // Handle /support command (creates an admin inbox request)
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/support(?:\s+(.*))?/, async (msg, match) => {
+      return;
       try {
         const sender = msg.from;
         const chatId = msg.chat.id;
@@ -1349,8 +1325,9 @@ class TelegramBot {
       }
     });
 
-    // Handle /help command
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/help/, async (msg) => {
+      return;
       try {
         const helpMessage = `📚 *Dashbot Help*
 
@@ -1376,8 +1353,9 @@ Need more help? Contact our support team.`;
       }
     });
 
-    // Handle /points command
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/points/, async (msg) => {
+      return;
       try {
         const sender = msg.from;
         const senderId = sender.id;
@@ -1419,8 +1397,9 @@ Need more help? Contact our support team.`;
       }
     });
 
-    // Handle /referral command
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/referral/, async (msg) => {
+      return;
       try {
         const sender = msg.from;
         const senderId = sender.id;
@@ -1461,8 +1440,9 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
       }
     });
 
-    // Handle /menu command to show interactive help-style menu
+    // Disabled: bot should respond only to /start
     this.bot.onText(/^\/menu/, async (msg) => {
+      return;
       try {
         const chatId = msg.chat.id;
 
@@ -1496,6 +1476,19 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
           const nodeKey = parts[2];
           const optionKey = parts[3];
           const userLang = await this.getUserLanguage(query.from.id, query.from.language_code);
+
+          try {
+            const label = await this.flow.getChoiceLabel({ slug, nodeKey, optionKey, lang: userLang || 'en' });
+            await this.logUserRequest({
+              sender: query.from,
+              chatId,
+              source: 'callback_query',
+              actionKey: data,
+              message: `Flow multi toggle: ${slug} -> ${nodeKey} toggled ${label}`,
+              payload: { slug, nodeKey, optionKey, label, callback_data: data }
+            });
+          } catch {}
+
           await this.flow.toggleMulti({ chatId, lang: userLang || 'en', nodeKey, optionKey });
         }
 
@@ -1514,6 +1507,22 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
           const optionKey = parts[3];
 
           const userLang = await this.getUserLanguage(query.from.id, query.from.language_code);
+
+          // Log user selection so it appears in admin "User Requests"
+          try {
+            const label = await this.flow.getChoiceLabel({ slug, nodeKey, optionKey, lang: userLang || 'en' });
+            await this.logUserRequest({
+              sender: query.from,
+              chatId,
+              source: 'callback_query',
+              actionKey: data,
+              message: `Flow selection: ${slug} -> ${nodeKey} = ${label}`,
+              payload: { slug, nodeKey, optionKey, label, callback_data: data }
+            });
+          } catch (e) {
+            // ignore log errors
+          }
+
           await this.flow.transition({ chatId, lang: userLang || 'en', answer: optionKey });
         }
 
@@ -1538,8 +1547,10 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
           }
         }
 
-        // Step 1: language selected -> ask for country (keep previous row)
+        // Disabled menu flow callbacks
         else if (data.startsWith('lang:')) {
+          await this.bot.answerCallbackQuery(query.id).catch(() => {});
+          return;
           const lang = data.split(':')[1];
 
           await this.bot.sendMessage(chatId, 'Please select a country:', {
@@ -1560,6 +1571,8 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
 
         // Step 2: country selected -> ask for help topic (keep previous rows)
         else if (data.startsWith('country:')) {
+          await this.bot.answerCallbackQuery(query.id).catch(() => {});
+          return;
           const parts = data.split(':');
           const lang = parts[1];
           const country = parts[2];
@@ -1581,6 +1594,8 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
 
         // Step 3: topic selected -> send canned answer
         else if (data.startsWith('topic:')) {
+          await this.bot.answerCallbackQuery(query.id).catch(() => {});
+          return;
           const parts = data.split(':');
           const lang = parts[1];
           const country = parts[2];
