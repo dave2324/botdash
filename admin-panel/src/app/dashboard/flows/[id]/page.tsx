@@ -351,7 +351,7 @@ export default function FlowEditPage() {
 
                 return (
                   <Fragment key={nKey}>
-                    <TableRow>
+                    <TableRow className={isChoice ? "bg-blue-50/40 dark:bg-blue-950/20" : ""}>
                       <TableCell className="font-mono">
                         {!n.id ? (
                           <Input
@@ -394,63 +394,75 @@ export default function FlowEditPage() {
                         <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        {isChoice && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setCollapsedOptions((prev) => ({
-                                ...prev,
-                                [n.node_key]: !(prev[n.node_key] !== false),
-                              }))
-                            }
-                          >
-                            {isCollapsed ? 'Show options' : 'Hide options'}
-                          </Button>
-                        )}
                         <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>
                           Delete
                         </Button>
                       </TableCell>
                     </TableRow>
 
-                    {isChoice && !isCollapsed && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="bg-muted/30">
+                    {isChoice && (
+                      <TableRow className="bg-blue-50/40 dark:bg-blue-950/20">
+                        <TableCell colSpan={6} className="bg-blue-50/40 dark:bg-blue-950/20">
                           {!n.id ? (
                             <div className="text-sm text-muted-foreground">
                               Save this question first to enable options.
                             </div>
+                          ) : isCollapsed ? (
+                            <div className="flex items-center justify-between border rounded p-3 bg-blue-50/40 dark:bg-blue-950/20">
+                              <div>
+                                <div className="font-semibold">Options</div>
+                                <div className="text-xs text-muted-foreground">{optList.length} option(s). Click Expand to edit.</div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setCollapsedOptions((prev) => ({ ...prev, [n.node_key]: false }))}
+                              >
+                                Expand
+                              </Button>
+                            </div>
                           ) : (
-                            <div className="border rounded p-3 bg-background">
+                            <div className="border rounded p-3 bg-blue-50/40 dark:bg-blue-950/20">
                               <div className="flex items-center justify-between mb-2">
-                                <div className="font-semibold">Options for: {n.node_key}</div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    const existingKeys = new Set((optList || []).map((x: any) => String(x.option_key)));
-                                    let i = (optList || []).length + 1;
-                                    let key = `opt_${i}`;
-                                    while (existingKeys.has(key)) {
-                                      i += 1;
-                                      key = `opt_${i}`;
-                                    }
-
-                                    setOptions([
-                                      ...options,
-                                      {
-                                        flow_node_id: n.id,
-                                        option_key: key,
-                                        label_i18n: { en: '' },
-                                        next_node_key: null,
-                                        sort_order: (optList || []).length
+                                <div>
+                                  <div className="font-semibold">Options for: {n.node_key}</div>
+                                  <div className="text-xs text-muted-foreground">Shown under this question. Telegram buttons will be shown in one row.</div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setCollapsedOptions((prev) => ({ ...prev, [n.node_key]: true }))}
+                                  >
+                                    Hide
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const existingKeys = new Set((optList || []).map((x: any) => String(x.option_key)));
+                                      let i = (optList || []).length + 1;
+                                      let key = `opt_${i}`;
+                                      while (existingKeys.has(key)) {
+                                        i += 1;
+                                        key = `opt_${i}`;
                                       }
-                                    ]);
-                                  }}
-                                >
-                                  + Add Row
-                                </Button>
+
+                                      setOptions([
+                                        ...options,
+                                        {
+                                          flow_node_id: n.id,
+                                          option_key: key,
+                                          label_i18n: { en: '' },
+                                          next_node_key: null,
+                                          sort_order: (optList || []).length
+                                        }
+                                      ]);
+                                    }}
+                                  >
+                                    + Add Row
+                                  </Button>
+                                </div>
                               </div>
 
                               <Table>
@@ -468,28 +480,24 @@ export default function FlowEditPage() {
                                     .slice()
                                     .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                                     .map((o: any) => (
-                                    <TableRow key={o.option_key}>
-                                      <TableCell className="text-center text-xs text-muted-foreground">{(o.sort_order ?? 0) + 1}</TableCell>
-                                      <TableCell className="font-mono">{o.option_key}</TableCell>
-                                      <TableCell>
-                                        <Input value={o.label_i18n?.en || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, label_i18n: { ...(x.label_i18n||{}), en: e.target.value } } : x))} />
-                                      </TableCell>
-                                      <TableCell>
-                                        <Input value={o.next_node_key || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, next_node_key: e.target.value || null } : x))} />
-                                      </TableCell>
-                                      <TableCell className="text-right space-x-2">
-                                        <Button size="sm" variant="destructive" onClick={() => onDeleteOption(n.id, o.option_key)}>
-                                          Delete
-                                        </Button>
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
+                                      <TableRow key={o.option_key}>
+                                        <TableCell className="text-center text-xs text-muted-foreground">{(o.sort_order ?? 0) + 1}</TableCell>
+                                        <TableCell className="font-mono">{o.option_key}</TableCell>
+                                        <TableCell>
+                                          <Input value={o.label_i18n?.en || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, label_i18n: { ...(x.label_i18n||{}), en: e.target.value } } : x))} />
+                                        </TableCell>
+                                        <TableCell>
+                                          <Input value={o.next_node_key || ''} onChange={(e) => setOptions(options.map(x => (x.flow_node_id===n.id && x.option_key===o.option_key) ? { ...x, next_node_key: e.target.value || null } : x))} />
+                                        </TableCell>
+                                        <TableCell className="text-right space-x-2">
+                                          <Button size="sm" variant="destructive" onClick={() => onDeleteOption(n.id, o.option_key)}>
+                                            Delete
+                                          </Button>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
                                 </TableBody>
                               </Table>
-
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                Note: Telegram buttons will be shown in one row.
-                              </div>
                             </div>
                           )}
                         </TableCell>
