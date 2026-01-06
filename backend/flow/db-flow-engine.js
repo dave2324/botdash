@@ -90,8 +90,10 @@ class DbFlowEngine {
     if (!verRes.rows.length) return null;
     const version = verRes.rows[0];
 
-    if (this.flowCache.has(version.id)) {
-      return this.flowCache.get(version.id);
+    const cached = this.flowCache.get(version.id);
+    const versionUpdatedAt = version.updated_at ? new Date(version.updated_at).getTime() : 0;
+    if (cached && cached.versionUpdatedAt === versionUpdatedAt) {
+      return cached.compiled;
     }
 
     const nodesRes = await this.pool.query(
@@ -133,7 +135,7 @@ class DbFlowEngine {
       start: version.start_node_key
     };
 
-    this.flowCache.set(version.id, compiled);
+    this.flowCache.set(version.id, { versionUpdatedAt, compiled });
     return compiled;
   }
 
