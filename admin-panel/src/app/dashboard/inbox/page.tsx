@@ -211,14 +211,13 @@ export default function InboxPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
-          <p className="text-sm text-gray-500">All user ↔ bot conversations. Reply with text or media.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Conversations list */}
         <div className="bg-white border rounded-lg overflow-hidden">
-          <div className="p-3 border-b font-medium">Conversations</div>
+          <div className="p-3 border-b font-medium">users</div>
           <div className="max-h-[70vh] overflow-auto">
             {conversations.map((c) => {
               const name = c.username
