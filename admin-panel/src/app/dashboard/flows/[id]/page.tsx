@@ -174,7 +174,7 @@ export default function FlowEditPage() {
         return;
       }
       await publishFlowVersion(selectedVersionId);
-      toast.success('Published');
+      toast.success('Saved');
       await loadFlow();
     } catch (e: any) {
       toast.error(formatFlowErrorUi(e));
@@ -301,7 +301,7 @@ export default function FlowEditPage() {
       }
 
       await publishFlowVersion(versionId);
-      toast.success('✅ Saved & Published');
+      toast.success('✅ Saved');
       await loadFlow();
       await loadVersion(versionId);
     } catch (e: any) {
