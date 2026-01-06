@@ -40,6 +40,18 @@ type ConversationMessage = {
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const sendingRef = useRef(false);
+  const sendQueueRef = useRef<
+    Array<{
+      conversationId: number;
+      text: string;
+      hasMedia: boolean;
+      mediaType: string;
+      url: string;
+      mediaFileName: string;
+      sig: string;
+      optimisticId: number;
+    }>
+  >([]);
   const lastSendRef = useRef<{ sig: string; at: number } | null>(null);
   const cooldownUntilRef = useRef<number>(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -101,34 +113,64 @@ export default function InboxPage() {
     else setMediaType('document');
   };
 
+  const processSendQueue = async () => {
+    if (sendingRef.current) return;
+    if (!sendQueueRef.current.length) return;
+
+    sendingRef.current = true;
+    setSending(true);
+
+    while (sendQueueRef.current.length) {
+      const job = sendQueueRef.current.shift();
+      if (!job) continue;
+
+      try {
+        const idempotencyKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        await api.post(`/admin/inbox/conversations/${job.conversationId}/reply`, {
+          text: job.text ? job.text : undefined,
+          media_type: job.hasMedia ? job.mediaType : undefined,
+          media_url: job.hasMedia ? job.url : undefined,
+          parse_mode: 'HTML',
+          idempotency_key: idempotencyKey,
+        });
+
+        lastSendRef.current = { sig: job.sig, at: Date.now() };
+        cooldownUntilRef.current = Date.now() + 300;
+      } catch (err) {
+        // Remove optimistic message for failed job
+        setMessages((prev) => prev.filter((m) => m.id !== job.optimisticId));
+        console.error('Failed to send reply', err);
+      }
+    }
+
+    setSending(false);
+    sendingRef.current = false;
+
+    // Refresh conversations list (for preview/last_message_at) but do NOT reload messages.
+    // Messages are already appended optimistically; reloading can cause UI jumps/flicker.
+    void loadConversations();
+  };
+
   const sendReply = async (e?: MouseEvent<HTMLButtonElement>) => {
-    // If this button ends up inside a <form>, prevent implicit submit.
     e?.preventDefault();
     e?.stopPropagation();
 
-    // Hard lock to prevent double-submit (React state updates are async).
-    if (sendingRef.current) return;
-
     if (!selectedConversation) return;
 
-    // Small cooldown to avoid accidental double-clicks sending duplicates.
+    // Small cooldown to avoid accidental double-click spam
     if (Date.now() < cooldownUntilRef.current) return;
 
     const text = replyText.trim();
     const url = mediaUrl.trim();
     const hasMedia = !!url;
-
     if (!text && !hasMedia) return;
 
-    // De-dupe same payload (text/media) within a short time window.
     const sig = `${selectedConversation.id}::${text}::${hasMedia ? `${mediaType}:${url}` : ''}`;
     const last = lastSendRef.current;
     if (last && last.sig === sig && Date.now() - last.at < 2500) return;
 
-    sendingRef.current = true;
-    setSending(true);
-
-    // Optimistic message so it appears immediately in the chat.
+    // Optimistic message
     const optimisticId = -Date.now();
     const nowIso = new Date().toISOString();
     const optimisticMessage: ConversationMessage = {
@@ -154,56 +196,29 @@ export default function InboxPage() {
         : null,
       created_at: nowIso,
     };
-
     setMessages((prev) => [...prev, optimisticMessage]);
 
-    try {
-      const conversationId = selectedConversation.id;
-      const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound');
+    // Enqueue send job
+    sendQueueRef.current.push({
+      conversationId: selectedConversation.id,
+      text,
+      hasMedia,
+      mediaType,
+      url,
+      mediaFileName,
+      sig,
+      optimisticId,
+    });
 
-      const idempotencyKey = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    // Clear composer immediately so admin can type next message
+    setReplyText('');
+    setMediaType('');
+    setMediaUrl('');
+    setMediaFileName('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
 
-      await api.post(`/admin/inbox/conversations/${conversationId}/reply`, {
-        text: text ? text : undefined,
-        media_type: hasMedia ? mediaType : undefined,
-        media_url: hasMedia ? url : undefined,
-        reply_to_message_id: lastInbound?.telegram_message_id || undefined,
-        parse_mode: 'HTML',
-        idempotency_key: idempotencyKey,
-      });
-
-      // Remember the last payload to prevent rapid duplicates.
-      lastSendRef.current = { sig, at: Date.now() };
-      cooldownUntilRef.current = Date.now() + 800;
-
-      // Clear composer and stop spinner immediately after send succeeds.
-      setReplyText('');
-      setMediaType('');
-      setMediaUrl('');
-      setMediaFileName('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-
-      setSending(false);
-      sendingRef.current = false;
-
-      // Refresh in the background to reconcile optimistic message with DB state.
-      void (async () => {
-        try {
-          await loadMessages(conversationId);
-          await loadConversations();
-        } catch {
-          // Ignore refresh errors.
-        }
-      })();
-    } catch (err) {
-      // If the send failed, remove the optimistic message.
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-
-      setSending(false);
-      sendingRef.current = false;
-
-      throw err;
-    }
+    // Process queue in background
+    void processSendQueue();
   };
 
   return (
@@ -323,7 +338,7 @@ export default function InboxPage() {
                 rows={2}
                 placeholder="Type a message…"
                 className="flex-1 w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 disabled:bg-gray-100 resize-none"
-                disabled={!selectedConversation || sending}
+                disabled={!selectedConversation}
               />
 
               {/* Attach button with icon */}
@@ -348,7 +363,7 @@ export default function InboxPage() {
                       const f = e.target.files?.[0];
                       if (f) handleUpload(f);
                     }}
-                    disabled={!selectedConversation || sending}
+                    disabled={!selectedConversation}
                   />
                 </label>
                 {mediaUrl && (() => {
@@ -371,25 +386,21 @@ export default function InboxPage() {
               <button
                 type="button"
                 onClick={sendReply}
-                disabled={!selectedConversation || sending || (!replyText.trim() && !mediaUrl.trim())}
+                disabled={!selectedConversation || (!replyText.trim() && !mediaUrl.trim())}
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {sending ? (
-                  <span className="text-[11px] font-medium">...</span>
-                ) : (
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                )}
+                <svg
+                  className={`w-4 h-4 ${sending ? 'opacity-70' : ''}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
               </button>
             </div>
           </div>

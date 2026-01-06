@@ -134,7 +134,7 @@ router.post('/conversations/:id/reply', adminAuth, async (req, res) => {
     if (!botInstance || !botInstance.bot) throw new Error('Bot not ready');
 
     let sent;
-    const opts = { parse_mode, reply_to_message_id: reply_to_message_id || undefined };
+    const opts = { parse_mode };
 
     if (hasMedia) {
       const caption = hasText ? String(text) : undefined;
