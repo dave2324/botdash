@@ -139,6 +139,14 @@ class DbFlowEngine {
     return compiled;
   }
 
+  async getChoiceNodeText({ slug, nodeKey, lang = 'en' }) {
+    const compiled = await this.loadPublishedFlowBySlug(slug);
+    if (!compiled) return '';
+    const node = compiled.nodesByKey.get(nodeKey);
+    if (!node) return '';
+    return this.t(node.prompt_i18n, lang, nodeKey);
+  }
+
   async getChoiceLabel({ slug, nodeKey, optionKey, lang = 'en' }) {
     const compiled = await this.loadPublishedFlowBySlug(slug);
     if (!compiled) return optionKey;

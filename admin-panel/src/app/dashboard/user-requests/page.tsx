@@ -15,10 +15,24 @@ function humanizeSource(source?: string) {
   return source || 'Unknown';
 }
 
-function humanizeAction(action?: string) {
+function humanizeAction(action?: string, payload?: any) {
+  // Prefer structured payload for flow selections
+  if (payload && typeof payload === 'object') {
+    const slug = payload.slug ? String(payload.slug) : '';
+    const nodeKey = payload.nodeKey ? String(payload.nodeKey) : '';
+    const nodeText = payload.nodeText ? String(payload.nodeText) : '';
+    const label = payload.label ? String(payload.label) : '';
+    const optionKey = payload.optionKey ? String(payload.optionKey) : '';
+
+    if (slug && (nodeText || nodeKey) && (label || optionKey)) {
+      const choice = label || optionKey;
+      const q = nodeText || nodeKey;
+      return `Flow: ${slug} / ${q} → ${choice}`;
+    }
+  }
+
   const a = String(action || '').trim();
   if (!a) return '—';
-  // flow callback examples
   if (a.startsWith('flowmulti:')) return 'Flow (multi-choice)';
   if (a.startsWith('flow:')) return 'Flow (choice)';
   if (a.startsWith('onb:')) return 'Onboarding';
@@ -279,7 +293,7 @@ export default function UserRequestsPage() {
                       <span className="font-medium text-gray-700">Source:</span> {humanizeSource(selected.source)}
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">Action:</span> {humanizeAction(selected.action_key)}
+                      <span className="font-medium text-gray-700">Action:</span> {humanizeAction(selected.action_key, selected.payload)}
                     </div>
                   </div>
 
@@ -310,7 +324,6 @@ export default function UserRequestsPage() {
                 </div>
 
                 <div className="mt-4">
-                  <label className="text-xs text-gray-500">Reply (will be sent to user on Telegram)</label>
                   <textarea
                     value={reply}
                     onChange={(e) => setReply(e.target.value)}

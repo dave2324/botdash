@@ -1525,13 +1525,14 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
 
           try {
             const label = await this.flow.getChoiceLabel({ slug, nodeKey, optionKey, lang: userLang || 'en' });
+            const nodeText = await this.flow.getChoiceNodeText({ slug, nodeKey, lang: userLang || 'en' });
             await this.logUserRequest({
               sender: query.from,
               chatId,
               source: 'callback_query',
               actionKey: data,
-              message: `Flow multi toggle: ${slug} -> ${nodeKey} toggled ${label}`,
-              payload: { slug, nodeKey, optionKey, label, callback_data: data }
+              message: `Flow multi toggle: ${slug} -> ${nodeText || nodeKey} toggled ${label}`,
+              payload: { slug, nodeKey, nodeText, optionKey, label, callback_data: data }
             });
           } catch {}
 
@@ -1557,13 +1558,14 @@ Share this code with your friends and ask them to send /start ref${referralInfo.
           // Log user selection so it appears in admin "User Requests"
           try {
             const label = await this.flow.getChoiceLabel({ slug, nodeKey, optionKey, lang: userLang || 'en' });
+            const nodeText = await this.flow.getChoiceNodeText({ slug, nodeKey, lang: userLang || 'en' });
             await this.logUserRequest({
               sender: query.from,
               chatId,
               source: 'callback_query',
               actionKey: data,
-              message: `Flow selection: ${slug} -> ${nodeKey} = ${label}`,
-              payload: { slug, nodeKey, optionKey, label, callback_data: data }
+              message: `Flow selection: ${slug} -> ${nodeText || nodeKey} = ${label}`,
+              payload: { slug, nodeKey, nodeText, optionKey, label, callback_data: data }
             });
           } catch (e) {
             // ignore log errors
