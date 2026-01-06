@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { RefreshCw, Save } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +64,7 @@ export default function FlowEditPage() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [options, setOptions] = useState<any[]>([]);
   const [savingAll, setSavingAll] = useState(false);
+  const [reloading, setReloading] = useState(false);
 
   const optionKeyToLabel = useMemo(() => {
     const m = new Map<string, string>();
@@ -309,6 +311,19 @@ export default function FlowEditPage() {
     }
   };
 
+  const onRefresh = async () => {
+    if (!flowId) return;
+    try {
+      setReloading(true);
+      await loadFlow();
+      if (selectedVersionId) {
+        await loadVersion(selectedVersionId);
+      }
+    } finally {
+      setReloading(false);
+    }
+  };
+
   if (!flow) return <div>Loading...</div>;
 
   return (
@@ -319,13 +334,24 @@ export default function FlowEditPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2 items-center">
           <div className="ml-auto flex gap-2 items-center">
-            <Button
-              onClick={onSaveFlowAll}
-              disabled={savingAll}
-              className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-2"
+              disabled={reloading || savingAll}
             >
-              {savingAll ? 'Saving...' : 'Save Changes'}
-            </Button>
+              <RefreshCw className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={onSaveFlowAll}
+              className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-2"
+              disabled={savingAll}
+            >
+              <Save className="h-4 w-4 text-white" />
+              <span>{savingAll ? 'Saving...' : 'Save Changes'}</span>
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -340,9 +366,7 @@ export default function FlowEditPage() {
               <Label>First Question ID (start)</Label>
               <Input value={version.start_node_key || ''} onChange={(e) => setVersion({ ...version, start_node_key: e.target.value })} placeholder="e.g. question_1" />
             </div>
-            <div className="text-xs text-muted-foreground md:col-span-2">
-              This will be saved when you click <b>Save Changes</b>.
-            </div>
+            
           </CardContent>
         </Card>
       )}
