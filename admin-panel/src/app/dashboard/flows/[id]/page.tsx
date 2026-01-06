@@ -25,6 +25,32 @@ import {
 
 const NODE_TYPES = ['text','single_choice','multi_choice','number','date','file','end'] as const;
 
+function humanizeFlowText(msg: string): string {
+  let out = String(msg || '');
+  out = out.replace(/node_key/gi, 'Question ID');
+  out = out.replace(/option_key/gi, 'Option');
+  out = out.replace(/flow_node_id/gi, 'Question');
+  out = out.replace(/\bkey\b/gi, 'Question');
+  return out;
+}
+
+function formatFlowError(err: any): string {
+  const raw = String(err?.response?.data?.message || err?.message || '').trim();
+  if (!raw) return 'Failed. Please check your Questions and Options.';
+
+  // Normalize wording from backend to UI-friendly text
+  let msg = raw;
+
+  // Replace technical terms
+  msg = humanizeFlowText(msg);
+
+  // Common patterns
+  msg = msg.replace(/key not found/gi, 'Question not found');
+  msg = msg.replace(/not found/gi, 'not found');
+
+  return msg;
+}
+
 export default function FlowEditPage() {
   const params = useParams();
   const flowId = Number(params?.id);
@@ -73,12 +99,12 @@ export default function FlowEditPage() {
 
   useEffect(() => {
     if (!flowId) return;
-    loadFlow().catch((e) => toast.error(e?.message || 'Failed to load flow'));
+    loadFlow().catch((e) => toast.error(formatFlowError(e)));
   }, [flowId]);
 
   useEffect(() => {
     if (selectedVersionId) {
-      loadVersion(selectedVersionId).catch((e) => toast.error(e?.message || 'Failed to load version'));
+      loadVersion(selectedVersionId).catch((e) => toast.error(formatFlowError(e)));
     }
   }, [selectedVersionId]);
 
@@ -89,7 +115,7 @@ export default function FlowEditPage() {
       await loadFlow();
       setSelectedVersionId(data.version.id);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed to create version');
+      toast.error(formatFlowError(e));
     }
   };
 
@@ -105,7 +131,7 @@ export default function FlowEditPage() {
       toast.success('Published');
       await loadFlow();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed to publish');
+      toast.error(formatFlowError(e));
     }
   };
 
@@ -113,7 +139,7 @@ export default function FlowEditPage() {
     if (!selectedVersionId) return;
     const v = await validateFlowVersion(selectedVersionId);
     if (v.ok) toast.success('✅ Valid');
-    else toast.error(v.errors.join('\n'));
+    else toast.error((v.errors || []).map((e: string) => humanizeFlowText(e)).join('\n'));
   };
 
   const onSetStart = async () => {
@@ -127,7 +153,7 @@ export default function FlowEditPage() {
       toast.success('Start node set');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed');
+      toast.error(formatFlowError(e));
     }
   };
 
@@ -139,7 +165,7 @@ export default function FlowEditPage() {
       toast.success('Question saved');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed');
+      toast.error(formatFlowError(e));
     }
   };
 
@@ -158,7 +184,7 @@ export default function FlowEditPage() {
       toast.success('Option saved');
       await loadVersion(selectedVersionId!);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed');
+      toast.error(formatFlowError(e));
     }
   };
 
@@ -212,7 +238,7 @@ export default function FlowEditPage() {
       toast.success('✅ Flow saved');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || e?.message || 'Failed to save flow');
+      toast.error(formatFlowError(e));
     } finally {
       setSavingAll(false);
     }
@@ -296,9 +322,12 @@ export default function FlowEditPage() {
               onClick={() => {
                 if (!selectedVersionId) return;
 
-                // Auto-generate a unique Question ID (no popup).
-                const suffix = Math.random().toString(36).slice(2, 8);
-                const nk = `q_${Date.now()}_${suffix}`;
+                // Auto-generate a short unique Question ID (no popup).
+                // Format: question_1, question_2, ...
+                const used = new Set(nodes.map((x) => String(x.node_key || '').toLowerCase()));
+                let i = 1;
+                while (used.has(`question_${i}`)) i += 1;
+                const nk = `question_${i}`;
 
                 // Temp key so React keys stay stable while user edits Question ID.
                 const tmp =
@@ -345,7 +374,9 @@ export default function FlowEditPage() {
                 .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                 .map((n) => {
                 const isChoice = n.type === 'single_choice' || n.type === 'multi_choice';
-                const optList = n.id ? (optionsByNodeId.get(n.id) || []) : [];
+                const optList = n.id
+                  ? (optionsByNodeId.get(n.id) || [])
+                  : options.filter((o) => o.node_key === n.node_key);
                 const nKey = n.id ? `id-${n.id}` : `tmp-${n.__tempKey || n.node_key}`;
                 const isCollapsed = collapsedOptions[n.node_key] !== false; // default collapsed
 
@@ -394,7 +425,7 @@ export default function FlowEditPage() {
                         <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        {isChoice && n.id && (
+                        {isChoice && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -408,8 +439,28 @@ export default function FlowEditPage() {
                             {isCollapsed ? 'Expand' : 'Collapse'}
                           </Button>
                         )}
-                        <Button size="sm" variant="destructive" onClick={() => onDeleteNode(n.node_key)}>
-                          Delete
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onDeleteNode(n.node_key)}
+                          aria-label="Delete question"
+                          className="p-2 h-8 w-8 inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
+                        >
+                          <svg
+                            className="w-4 h-4 text-red-500"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                          </svg>
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -417,11 +468,7 @@ export default function FlowEditPage() {
                     {isChoice && (
                       <TableRow className="bg-neutral-200/80 dark:bg-neutral-900/60">
                         <TableCell colSpan={6} className="bg-neutral-200/80 dark:bg-neutral-900/60">
-                          {!n.id ? (
-                            <div className="text-sm text-muted-foreground">
-                              Save this question first to enable options.
-                            </div>
-                          ) : isCollapsed ? (
+                          {isCollapsed ? (
                             <div className="text-xs text-muted-foreground">
                               Options are collapsed.
                             </div>
@@ -448,7 +495,10 @@ export default function FlowEditPage() {
                                       setOptions([
                                         ...options,
                                         {
-                                          flow_node_id: n.id,
+                                          // allow options before the question is saved:
+                                          // link by node_key for now, and flow_node_id will be filled during Save Flow.
+                                          flow_node_id: n.id || null,
+                                          node_key: n.node_key,
                                           option_key: key,
                                           label_i18n: { en: '' },
                                           next_node_key: null,
@@ -483,7 +533,7 @@ export default function FlowEditPage() {
                                             onChange={(e) =>
                                               setOptions(
                                                 options.map((x) =>
-                                                  x.flow_node_id === n.id && x.option_key === o.option_key
+                                                  (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
                                                     ? { ...x, label_i18n: { ...(x.label_i18n || {}), en: e.target.value } }
                                                     : x
                                                 )
@@ -498,7 +548,7 @@ export default function FlowEditPage() {
                                             onChange={(e) =>
                                               setOptions(
                                                 options.map((x) =>
-                                                  x.flow_node_id === n.id && x.option_key === o.option_key
+                                                  (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
                                                     ? { ...x, next_node_key: e.target.value || null }
                                                     : x
                                                 )
@@ -507,8 +557,33 @@ export default function FlowEditPage() {
                                           />
                                         </TableCell>
                                         <TableCell className="text-right space-x-2">
-                                          <Button size="sm" variant="destructive" onClick={() => onDeleteOption(n.id, o.option_key)}>
-                                            Delete
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              if (!n.id) {
+                                                // Unsaved question: remove locally
+                                                setOptions((prev) => prev.filter((x) => !(x.node_key === n.node_key && x.option_key === o.option_key)));
+                                                return;
+                                              }
+                                              onDeleteOption(n.id, o.option_key);
+                                            }}
+                                            aria-label="Delete option"
+                                            className="p-2 h-8 w-8 inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
+                                          >
+                                            <svg
+                                              className="w-4 h-4 text-red-500"
+                                              viewBox="0 0 24 24"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeWidth="2"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                            >
+                                              <circle cx="12" cy="12" r="9" />
+                                              <line x1="9" y1="9" x2="15" y2="15" />
+                                              <line x1="15" y1="9" x2="9" y2="15" />
+                                            </svg>
                                           </Button>
                                         </TableCell>
                                       </TableRow>
