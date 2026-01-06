@@ -64,6 +64,51 @@ export default function FlowEditPage() {
   const [options, setOptions] = useState<any[]>([]);
   const [savingAll, setSavingAll] = useState(false);
 
+  const optionKeyToLabel = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of options || []) {
+      const k = String(o?.option_key || '').trim();
+      if (!k) continue;
+      const label = String(o?.label_i18n?.en || '').trim();
+      if (label) m.set(k, label);
+    }
+    return m;
+  }, [options]);
+
+  const questionKeyToText = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of nodes || []) {
+      const k = String(n?.node_key || '').trim();
+      if (!k) continue;
+      const t = String(n?.prompt_i18n?.en || '').trim();
+      if (t) m.set(k, t);
+    }
+    return m;
+  }, [nodes]);
+
+  const appendQuestionContext = (msg: string) => {
+    // If the message contains a Question ID, append its question text (if available)
+    const m = msg.match(/Question ID\s*[:=]?\s*([A-Za-z0-9_\-]+)/i);
+    const qid = m?.[1];
+    if (!qid) return msg;
+    const qt = questionKeyToText.get(qid);
+    if (!qt) return msg;
+    return `${msg}\nQuestion: ${qid} — ${qt}`;
+  };
+
+  const formatFlowErrorUi = (err: any) => {
+    // Start from the generic formatter (Question/Option wording)
+    let msg = formatFlowError(err);
+
+    // Replace option_key values with their button text when possible
+    msg = msg.replace(/\bopt_\d+\b/gi, (k) => optionKeyToLabel.get(k) || k);
+
+    // If it's option-related, include the source question
+    msg = appendQuestionContext(msg);
+
+    return msg;
+  };
+
   // Collapse/expand options per question
   const [collapsedOptions, setCollapsedOptions] = useState<Record<string, boolean>>({});
 
@@ -108,15 +153,14 @@ export default function FlowEditPage() {
     }
   }, [selectedVersionId]);
 
-  const onCreateVersion = async () => {
-    try {
-      const data = await createFlowVersion(flowId);
-      toast.success('Draft version created');
-      await loadFlow();
-      setSelectedVersionId(data.version.id);
-    } catch (e: any) {
-      toast.error(formatFlowError(e));
-    }
+  const ensureVersion = async (): Promise<number> => {
+    // Ensure there's an editable version selected.
+    if (selectedVersionId) return selectedVersionId;
+
+    const data = await createFlowVersion(flowId);
+    await loadFlow();
+    setSelectedVersionId(data.version.id);
+    return data.version.id;
   };
 
   const onPublish = async () => {
@@ -131,7 +175,7 @@ export default function FlowEditPage() {
       toast.success('Published');
       await loadFlow();
     } catch (e: any) {
-      toast.error(formatFlowError(e));
+      toast.error(formatFlowErrorUi(e));
     }
   };
 
@@ -139,7 +183,14 @@ export default function FlowEditPage() {
     if (!selectedVersionId) return;
     const v = await validateFlowVersion(selectedVersionId);
     if (v.ok) toast.success('✅ Valid');
-    else toast.error((v.errors || []).map((e: string) => humanizeFlowText(e)).join('\n'));
+    else {
+       const lines = (v.errors || []).map((e: string) => {
+         const base = humanizeFlowText(e);
+         const withOpt = base.replace(/\bopt_\d+\b/gi, (k) => optionKeyToLabel.get(k) || k);
+         return appendQuestionContext(withOpt);
+       });
+       toast.error(lines.join('\n'));
+     }
   };
 
   const onSetStart = async () => {
@@ -153,7 +204,7 @@ export default function FlowEditPage() {
       toast.success('Start node set');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
-      toast.error(formatFlowError(e));
+      toast.error(formatFlowErrorUi(e));
     }
   };
 
@@ -165,7 +216,7 @@ export default function FlowEditPage() {
       toast.success('Question saved');
       await loadVersion(selectedVersionId);
     } catch (e: any) {
-      toast.error(formatFlowError(e));
+      toast.error(formatFlowErrorUi(e));
     }
   };
 
@@ -184,7 +235,7 @@ export default function FlowEditPage() {
       toast.success('Option saved');
       await loadVersion(selectedVersionId!);
     } catch (e: any) {
-      toast.error(formatFlowError(e));
+      toast.error(formatFlowErrorUi(e));
     }
   };
 
@@ -195,28 +246,28 @@ export default function FlowEditPage() {
   };
 
   const onSaveFlowAll = async () => {
-    if (!selectedVersionId) return;
-
     try {
       setSavingAll(true);
+
+      const versionId = await ensureVersion();
 
       // Save all questions first (ensures node ids exist)
       const nodesSorted = [...nodes].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       for (const n of nodesSorted) {
         if (!n?.node_key) continue;
-        await upsertFlowNode(selectedVersionId, n.node_key, n);
+        await upsertFlowNode(versionId, n.node_key, n);
       }
 
-      // Save start node key (version settings)
+      // Save first question (start node)
       if (version?.start_node_key) {
-        await setFlowStartNode(selectedVersionId, version.start_node_key);
+        await setFlowStartNode(versionId, version.start_node_key);
       }
 
       // Reload so we have the latest ids
-      await loadVersion(selectedVersionId);
+      await loadVersion(versionId);
 
       // Save all options (for saved nodes)
-      const currentNodes = await getFlowVersion(flowId, selectedVersionId);
+      const currentNodes = await getFlowVersion(flowId, versionId);
       const nodeKeyToId = new Map((currentNodes.nodes || []).map((n: any) => [n.node_key, n.id]));
 
       const optionsSorted = [...options].sort((a, b) => {
@@ -235,8 +286,22 @@ export default function FlowEditPage() {
         await upsertFlowOption(o.flow_node_id, o.option_key, o);
       }
 
-      toast.success('✅ Flow saved');
-      await loadVersion(selectedVersionId);
+      // Validate then auto-publish
+      const vres = await validateFlowVersion(versionId);
+      if (!vres.ok) {
+        const lines = (vres.errors || []).map((e: string) => {
+          const base = humanizeFlowText(e);
+          const withOpt = base.replace(/\bopt_\d+\b/gi, (k) => optionKeyToLabel.get(k) || k);
+          return appendQuestionContext(withOpt);
+        });
+        toast.error(lines.join('\n'));
+        return;
+      }
+
+      await publishFlowVersion(versionId);
+      toast.success('✅ Saved & Published');
+      await loadFlow();
+      await loadVersion(versionId);
     } catch (e: any) {
       toast.error(formatFlowError(e));
     } finally {
@@ -253,35 +318,14 @@ export default function FlowEditPage() {
           <CardTitle>Flow: {flow.title} ({flow.slug})</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2 items-center">
-          <Button variant="outline" onClick={onCreateVersion}>New Draft Version</Button>
-          <Button variant="outline" onClick={onValidate}>Validate</Button>
-          <Button
-            onClick={onPublish}
-            className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-          >
-            Publish
-          </Button>
-
           <div className="ml-auto flex gap-2 items-center">
             <Button
               onClick={onSaveFlowAll}
-              disabled={!selectedVersionId || savingAll}
-              className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+              disabled={savingAll}
+              className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
-              {savingAll ? 'Saving...' : 'Save Flow'}
+              {savingAll ? 'Saving...' : 'Save Changes'}
             </Button>
-            <Select value={selectedVersionId ? String(selectedVersionId) : ''} onValueChange={(v) => setSelectedVersionId(Number(v))}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Select version" />
-              </SelectTrigger>
-              <SelectContent>
-                {versions.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)}>
-                    v{v.version} ({v.status})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
@@ -289,24 +333,16 @@ export default function FlowEditPage() {
       {version && (
         <Card>
           <CardHeader>
-            <CardTitle>Version Settings (Draft / Published)</CardTitle>
+            <CardTitle>First Question</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
             <div>
               <Label>First Question ID (start)</Label>
-              <Input value={version.start_node_key || ''} onChange={(e) => setVersion({ ...version, start_node_key: e.target.value })} placeholder="e.g. Start" />
+              <Input value={version.start_node_key || ''} onChange={(e) => setVersion({ ...version, start_node_key: e.target.value })} placeholder="e.g. question_1" />
             </div>
-            <div>
-              <Label>Status</Label>
-              <Input value={version.status} disabled />
+            <div className="text-xs text-muted-foreground md:col-span-2">
+              This will be saved when you click <b>Save Changes</b>.
             </div>
-            <Button
-              variant="outline"
-              onClick={onSetStart}
-              className="border-blue-500 text-blue-600 hover:bg-blue-600/10 dark:text-blue-300 dark:border-blue-400"
-            >
-              Save first question
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -382,7 +418,7 @@ export default function FlowEditPage() {
 
                 return (
                   <Fragment key={nKey}>
-                    <TableRow className={isChoice ? "bg-blue-50/40 dark:bg-blue-950/20" : ""}>
+                    <TableRow>
                       <TableCell className="font-mono">
                         {!n.id ? (
                           <Input
@@ -466,14 +502,10 @@ export default function FlowEditPage() {
                     </TableRow>
 
                     {isChoice && (
-                      <TableRow className="bg-neutral-200/80 dark:bg-neutral-900/60">
-                        <TableCell colSpan={6} className="bg-neutral-200/80 dark:bg-neutral-900/60">
-                          {isCollapsed ? (
-                            <div className="text-xs text-muted-foreground">
-                              Options are collapsed.
-                            </div>
-                          ) : (
-                            <div className="border rounded p-3 bg-neutral-200/80 dark:bg-neutral-900/60">
+                      <TableRow>
+                        <TableCell colSpan={6}>
+                          {isCollapsed ? null : (
+                            <div className="border rounded p-3 bg-white max-w-3xl mx-auto">
                               <div className="flex items-center justify-between mb-2">
                                 <div>
                                   <div className="font-semibold">Options for: {n.node_key}</div>
@@ -507,7 +539,7 @@ export default function FlowEditPage() {
                                       ]);
                                     }}
                                   >
-                                    + Add Row
+                                    + Add Option
                                   </Button>
                                 </div>
                               </div>
