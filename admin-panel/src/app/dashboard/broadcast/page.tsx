@@ -5,7 +5,6 @@ import { uploadFile, broadcastMedia } from '@/lib/api';
 
 export default function BroadcastPage() {
   const [message, setMessage] = useState<string>('');
-  const [target, setTarget] = useState<'all' | 'premium' | 'non_banned'>('all');
   const [mediaUrl, setMediaUrl] = useState<string>('');
   const [mediaType, setMediaType] = useState<'photo' | 'video'>('photo');
   const [uploading, setUploading] = useState(false);
@@ -23,15 +22,6 @@ export default function BroadcastPage() {
       )}
 
       <div className="mt-4 p-4 rounded-lg bg-white shadow-sm border grid gap-3">
-        <div className="flex gap-2 items-center">
-          <label className="text-sm font-medium">Target</label>
-          <select className="px-3 py-2 border rounded" value={target} onChange={(e) => setTarget(e.target.value as any)}>
-            <option value="all">All</option>
-            <option value="premium">Premium</option>
-            <option value="non_banned">Non-banned</option>
-          </select>
-        </div>
-
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -86,7 +76,6 @@ export default function BroadcastPage() {
                 message,
                 media_type: mediaUrl ? mediaType : undefined,
                 media_url: mediaUrl || undefined,
-                target,
               });
               setStatus({ type: 'success', text: `Broadcast done. Sent=${res.sent}, Failed=${res.failed}` });
             } catch {
