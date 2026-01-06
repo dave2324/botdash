@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, RefreshCw, Send } from 'lucide-react';
+import { MessageSquare, RefreshCw, Send, Circle, CheckCircle2, Clock3 } from 'lucide-react';
 import api, { UserRequest } from '@/lib/api';
 
 export default function UserRequestsPage() {
@@ -13,6 +13,35 @@ export default function UserRequestsPage() {
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const getStatusConfig = (status: 'open' | 'in_progress' | 'closed') => {
+    switch (status) {
+      case 'open':
+        return {
+          label: 'Open',
+          className: 'bg-red-50 text-red-600 border-red-200',
+          icon: Circle,
+        };
+      case 'in_progress':
+        return {
+          label: 'In progress',
+          className: 'bg-amber-50 text-amber-700 border-amber-200',
+          icon: Clock3,
+        };
+      case 'closed':
+        return {
+          label: 'Closed',
+          className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          icon: CheckCircle2,
+        };
+      default:
+        return {
+          label: status,
+          className: 'bg-gray-50 text-gray-600 border-gray-200',
+          icon: Circle,
+        };
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -77,19 +106,21 @@ export default function UserRequestsPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <MessageSquare className="h-6 w-6 text-blue-500" />
+          <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+            <MessageSquare className="h-5 w-5 text-blue-500" />
+          </div>
           <div>
             <h1 className="text-2xl font-bold">User Requests</h1>
-            <p className="text-sm text-gray-500">Inbox from /support and inline button selections.</p>
+            <p className="text-sm text-gray-500">Central inbox for support messages and inline button selections.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 justify-end">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 rounded-lg border border-gray-300"
+            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm shadow-sm"
           >
             <option value="open">Open</option>
             <option value="in_progress">In progress</option>
@@ -101,7 +132,7 @@ export default function UserRequestsPage() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={fetchData}
-            className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-gray-900 hover:bg-black text-white flex items-center gap-2 text-sm shadow-sm disabled:opacity-70"
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -118,8 +149,11 @@ export default function UserRequestsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <div className="bg-white border rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b text-sm font-medium text-gray-700">{title}</div>
+          <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">{title}</div>
+              <div className="text-xs text-gray-500">{items.length} request{items.length === 1 ? '' : 's'}</div>
+            </div>
             {loading ? (
               <div className="p-4 text-gray-500">Loading...</div>
             ) : items.length === 0 ? (
@@ -130,16 +164,44 @@ export default function UserRequestsPage() {
                   <button
                     key={it.id}
                     onClick={() => setSelected(it)}
-                    className={`w-full text-left px-4 py-3 hover:bg-gray-50 ${selected?.id === it.id ? 'bg-blue-50' : ''}`}
+                    className={`w-full text-left px-4 py-3 transition-colors hover:bg-gray-50 ${
+                      selected?.id === it.id ? 'bg-blue-50/70' : ''
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium text-gray-900">
-                        {(it.first_name || it.username || 'User')} — <span className="text-gray-600">{it.source}</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-gray-900 truncate">
+                            {(it.first_name || it.username || 'User')}
+                          </div>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                            {it.source}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-700 mt-1 line-clamp-2">{it.message}</div>
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <span>#{it.id}</span>
+                            <span className="mx-1">•</span>
+                            <span>{new Date(it.created_at).toLocaleString()}</span>
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500">#{it.id} • {new Date(it.created_at).toLocaleString()}</div>
+                      <div className="ml-2 flex flex-col items-end gap-1">
+                        {(() => {
+                          const cfg = getStatusConfig(it.status as 'open' | 'in_progress' | 'closed');
+                          const Icon = cfg.icon;
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium ${cfg.className}`}
+                            >
+                              <Icon className="h-3 w-3" />
+                              {cfg.label}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-700 mt-1 line-clamp-2">{it.message}</div>
-                    <div className="text-xs text-gray-500 mt-1">Status: {it.status}</div>
                   </button>
                 ))}
               </div>
@@ -148,36 +210,77 @@ export default function UserRequestsPage() {
         </div>
 
         <div className="lg:col-span-1">
-          <div className="bg-white border rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-700 mb-2">Details</div>
+          <div className="bg-white border rounded-xl p-4 shadow-sm sticky top-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-gray-800">Details</div>
+              {selected && (
+                (() => {
+                  const cfg = getStatusConfig(selected.status as 'open' | 'in_progress' | 'closed');
+                  const Icon = cfg.icon;
+                  return (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium ${cfg.className}`}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {cfg.label}
+                    </span>
+                  );
+                })()
+              )}
+            </div>
             {!selected ? (
               <div className="text-gray-500 text-sm">Select a request to view and reply.</div>
             ) : (
               <>
                 <div className="text-sm">
-                  <div className="font-semibold text-gray-900">
-                    {(selected.first_name || selected.username || 'User')} (chat: {selected.telegram_chat_id})
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-blue-50 flex items-center justify-center text-sm font-semibold text-blue-600">
+                      {(selected.first_name?.[0] || selected.username?.[0] || 'U').toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-900">
+                        {(selected.first_name || selected.username || 'User')}
+                      </div>
+                      <div className="text-xs text-gray-500">Chat ID: {selected.telegram_chat_id}</div>
+                    </div>
                   </div>
-                  <div className="text-gray-600 mt-1">{selected.message}</div>
-                  <div className="text-xs text-gray-500 mt-2">Action: {selected.action_key}</div>
+
+                  <div className="mt-3 space-y-1 text-xs text-gray-500">
+                    <div>
+                      <span className="font-medium text-gray-700">Request ID:</span> #{selected.id}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Created:</span> {new Date(selected.created_at).toLocaleString()}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Source:</span> {selected.source}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Action:</span> {selected.action_key}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-3 rounded-lg bg-gray-50 text-gray-700 text-sm max-h-40 overflow-y-auto">
+                    {selected.message}
+                  </div>
                 </div>
 
-                <div className="mt-4 flex gap-2">
+                <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     onClick={() => updateStatus(selected.id, 'open')}
-                    className="px-3 py-2 rounded-lg border text-sm"
+                    className="px-3 py-1.5 rounded-full border text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Open
                   </button>
                   <button
                     onClick={() => updateStatus(selected.id, 'in_progress')}
-                    className="px-3 py-2 rounded-lg border text-sm"
+                    className="px-3 py-1.5 rounded-full border text-xs font-medium text-amber-700 hover:bg-amber-50 border-amber-200"
                   >
                     In progress
                   </button>
                   <button
                     onClick={() => updateStatus(selected.id, 'closed')}
-                    className="px-3 py-2 rounded-lg border text-sm"
+                    className="px-3 py-1.5 rounded-full border text-xs font-medium text-emerald-700 hover:bg-emerald-50 border-emerald-200"
                   >
                     Closed
                   </button>
@@ -189,7 +292,7 @@ export default function UserRequestsPage() {
                     value={reply}
                     onChange={(e) => setReply(e.target.value)}
                     rows={5}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     placeholder="Type your reply..."
                   />
 
@@ -198,7 +301,7 @@ export default function UserRequestsPage() {
                     whileTap={{ scale: 0.98 }}
                     onClick={sendReply}
                     disabled={sending || !reply.trim()}
-                    className="mt-2 w-full px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="mt-2 w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2 text-sm shadow-sm disabled:opacity-50"
                   >
                     <Send className="h-4 w-4" />
                     Send Reply
