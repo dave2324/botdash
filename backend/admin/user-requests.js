@@ -74,7 +74,7 @@ router.post('/:id/reply', adminAuth, async (req, res) => {
     await client.query('BEGIN');
 
     const reqResult = await client.query(
-      `SELECT ur.*, tu.telegram_id
+      `SELECT ur.*
        FROM user_requests ur
        JOIN telegram_users tu ON tu.id = ur.user_id
        WHERE ur.id = $1
@@ -89,10 +89,18 @@ router.post('/:id/reply', adminAuth, async (req, res) => {
 
     const requestRow = reqResult.rows[0];
 
-    // send telegram DM
+    // send telegram DM (normal message, not a reply)
     const { createBot } = require('../bot');
     const botInstance = await createBot();
-    await botInstance.bot.sendMessage(requestRow.telegram_chat_id, String(message));
+    if (!botInstance || !botInstance.bot) {
+      throw new Error('Bot not ready');
+    }
+
+    try {
+      await botInstance.bot.sendMessage(requestRow.telegram_chat_id, String(message));
+    } catch (e) {
+      throw new Error(`Telegram send failed: ${e?.message || e}`);
+    }
 
     const updated = await client.query(
       `UPDATE user_requests
@@ -111,7 +119,7 @@ router.post('/:id/reply', adminAuth, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error replying to user:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: error?.message || 'Server error' });
   } finally {
     client.release();
   }

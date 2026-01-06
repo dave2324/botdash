@@ -5,6 +5,29 @@ import { motion } from 'framer-motion';
 import { MessageSquare, RefreshCw, Send, Circle, CheckCircle2, Clock3 } from 'lucide-react';
 import api, { UserRequest } from '@/lib/api';
 
+function humanizeSource(source?: string) {
+  const s = String(source || '').toLowerCase();
+  if (s === 'callback_query') return 'Button Click';
+  if (s === 'message') return 'Message';
+  if (s === 'command') return 'Command';
+  if (s === 'menu') return 'Menu';
+  if (s === 'flow') return 'Flow';
+  return source || 'Unknown';
+}
+
+function humanizeAction(action?: string) {
+  const a = String(action || '').trim();
+  if (!a) return '—';
+  // flow callback examples
+  if (a.startsWith('flowmulti:')) return 'Flow (multi-choice)';
+  if (a.startsWith('flow:')) return 'Flow (choice)';
+  if (a.startsWith('onb:')) return 'Onboarding';
+  if (a.startsWith('topic:')) return 'Topic';
+  if (a.startsWith('country:')) return 'Country';
+  if (a.startsWith('lang:')) return 'Language';
+  return a;
+}
+
 export default function UserRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<'open' | 'in_progress' | 'closed' | 'all'>('open');
   const [items, setItems] = useState<UserRequest[]>([]);
@@ -96,9 +119,9 @@ export default function UserRequestsPage() {
       setMessage({ type: 'success', text: 'Reply sent to user' });
       await fetchData();
       setSelected(null);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setMessage({ type: 'error', text: 'Failed to send reply' });
+      setMessage({ type: 'error', text: e?.response?.data?.message || e?.message || 'Failed to send reply' });
     } finally {
       setSending(false);
     }
@@ -132,7 +155,7 @@ export default function UserRequestsPage() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={fetchData}
-            className="px-4 py-2 rounded-lg bg-gray-900 hover:bg-black text-white flex items-center gap-2 text-sm shadow-sm disabled:opacity-70"
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 text-sm shadow-sm disabled:opacity-70"
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -175,7 +198,7 @@ export default function UserRequestsPage() {
                             {(it.first_name || it.username || 'User')}
                           </div>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                            {it.source}
+                            {humanizeSource(it.source)}
                           </span>
                         </div>
                         <div className="text-sm text-gray-700 mt-1 line-clamp-2">{it.message}</div>
@@ -253,10 +276,10 @@ export default function UserRequestsPage() {
                       <span className="font-medium text-gray-700">Created:</span> {new Date(selected.created_at).toLocaleString()}
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">Source:</span> {selected.source}
+                      <span className="font-medium text-gray-700">Source:</span> {humanizeSource(selected.source)}
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">Action:</span> {selected.action_key}
+                      <span className="font-medium text-gray-700">Action:</span> {humanizeAction(selected.action_key)}
                     </div>
                   </div>
 
