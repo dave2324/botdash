@@ -9,7 +9,6 @@ import {
   getSettings,
   bulkUpdateSettings,
   uploadFile,
-  broadcastMedia,
   getOnboardingQuestions,
   createOnboardingQuestion,
   updateOnboardingQuestion,
@@ -25,7 +24,7 @@ import {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Setting[]>([]);
-  const [activeTab, setActiveTab] = useState<'points' | 'premium' | 'welcome' | 'languages' | 'onboarding' | 'broadcast'>('welcome');
+  const [activeTab, setActiveTab] = useState<'points' | 'premium' | 'welcome' | 'languages' | 'onboarding'>('welcome');
 
   const [supportedLanguages, setSupportedLanguages] = useState<string>('');
   const [defaultLanguage, setDefaultLanguage] = useState<string>('en');
@@ -44,12 +43,6 @@ export default function SettingsPage() {
   const [newQuestionOptions, setNewQuestionOptions] = useState<string>(''); // one option per line: key=Label
   const [newQuestionRequired, setNewQuestionRequired] = useState(true);
   const [newQuestionSortOrder, setNewQuestionSortOrder] = useState(0);
-
-  const [broadcastMessage, setBroadcastMessage] = useState('');
-  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'premium' | 'non_banned'>('all');
-  const [broadcastMediaUrl, setBroadcastMediaUrl] = useState<string>('');
-  const [broadcastMediaType, setBroadcastMediaType] = useState<'photo' | 'video'>('photo');
-  const [broadcastUploading, setBroadcastUploading] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -156,7 +149,7 @@ export default function SettingsPage() {
       <div className="mb-6 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <Settings className="h-6 w-6 text-blue-500" />
-          <h1 className="text-2xl font-bold">Settings</h1>
+          <h1 className="text-2xl font-bold">Welcome Messages</h1>
         </div>
         <div className="flex gap-2">
           <motion.button
@@ -216,35 +209,6 @@ export default function SettingsPage() {
             </button>
           </li>
 
-          <li className="mr-2">
-            <button 
-              onClick={() => setActiveTab('onboarding')}
-              className={`inline-block p-4 border-b-2 ${
-                activeTab === 'onboarding' 
-                  ? 'text-blue-600 border-blue-600' 
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
-              } rounded-t-lg`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Onboarding</span>
-              </div>
-            </button>
-          </li>
-
-          <li className="mr-2">
-            <button 
-              onClick={() => setActiveTab('broadcast')}
-              className={`inline-block p-4 border-b-2 ${
-                activeTab === 'broadcast' 
-                  ? 'text-blue-600 border-blue-600' 
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
-              } rounded-t-lg`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Broadcast</span>
-              </div>
-            </button>
-          </li>
         </ul>
       </div>
 
@@ -679,77 +643,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Broadcast Tab */}
-      {activeTab === 'broadcast' && (
-        <div className="grid gap-4">
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-sm font-medium text-gray-900">Broadcast (text + photo/video)</h3>
-            <textarea
-              value={broadcastMessage}
-              onChange={(e) => setBroadcastMessage(e.target.value)}
-              rows={6}
-              className="w-full mt-3 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-              placeholder="Message (optional if sending media)"
-            />
-            <div className="mt-3 flex gap-3 items-center">
-              <select className="px-3 py-2 border rounded" value={broadcastTarget} onChange={(e) => setBroadcastTarget(e.target.value as any)}>
-                <option value="all">All</option>
-                <option value="premium">Premium</option>
-                <option value="non_banned">Non-banned</option>
-              </select>
-              <select className="px-3 py-2 border rounded" value={broadcastMediaType} onChange={(e) => setBroadcastMediaType(e.target.value as any)}>
-                <option value="photo">Photo</option>
-                <option value="video">Video</option>
-              </select>
-              <label className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 cursor-pointer">
-                {broadcastUploading ? 'Uploading...' : 'Upload Media'}
-                <input
-                  type="file"
-                  accept={broadcastMediaType === 'photo' ? 'image/*' : 'video/*'}
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      setBroadcastUploading(true);
-                      const up = await uploadFile(file, 'broadcast');
-                      setBroadcastMediaUrl(up.url);
-                    } catch (err) {
-                      setMessage({ type: 'error', text: 'Media upload failed' });
-                    } finally {
-                      setBroadcastUploading(false);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-            <input
-              className="w-full mt-3 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-              value={broadcastMediaUrl}
-              onChange={(e) => setBroadcastMediaUrl(e.target.value)}
-              placeholder="Media URL (optional if not sending media)"
-            />
-            <button
-              className="mt-3 px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white"
-              onClick={async () => {
-                try {
-                  const res = await broadcastMedia({
-                    message: broadcastMessage,
-                    media_type: broadcastMediaUrl ? broadcastMediaType : undefined,
-                    media_url: broadcastMediaUrl || undefined,
-                    target: broadcastTarget
-                  });
-                  setMessage({ type: 'success', text: `Broadcast done. Sent=${res.sent}, Failed=${res.failed}` });
-                } catch (e) {
-                  setMessage({ type: 'error', text: 'Broadcast failed' });
-                }
-              }}
-            >
-              Send Broadcast
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

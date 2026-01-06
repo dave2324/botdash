@@ -75,13 +75,28 @@ export default function InboxPage() {
     setConversations(res.data.conversations || []);
   };
 
-  const loadMessages = async (conversationId: number) => {
-    setLoading(true);
+  const loadMessages = async (conversationId: number, opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await api.get(`/admin/inbox/conversations/${conversationId}/messages?limit=500`);
-      setMessages(res.data.messages || []);
+      const incoming: ConversationMessage[] = res.data.messages || [];
+
+      // Merge by id for this conversation to avoid flicker and preserve optimistic messages.
+      setMessages((prev) => {
+        const prevSame = prev.filter((m) => m.conversation_id === conversationId);
+        const byId = new Map<any, ConversationMessage>();
+        for (const m of prevSame) byId.set(m.id, m);
+        for (const m of incoming) byId.set(m.id, m);
+        return Array.from(byId.values()).sort((a, b) => {
+          const ta = Date.parse(a.created_at || '') || 0;
+          const tb = Date.parse(b.created_at || '') || 0;
+          if (ta !== tb) return ta - tb;
+          return (a.id || 0) - (b.id || 0);
+        });
+      });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -92,7 +107,20 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedId) loadMessages(selectedId);
+    if (!selectedId) return;
+    setMessages([]);
+    loadMessages(selectedId);
+  }, [selectedId]);
+
+  // Auto-refresh messages for the selected conversation so new user messages appear
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const interval = setInterval(() => {
+      loadMessages(selectedId, { silent: true });
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [selectedId]);
 
   // Auto-scroll to the latest message when messages change
@@ -285,13 +313,15 @@ export default function InboxPage() {
 
           {/* Messages list */}
           <div className="flex-1 px-4 py-3 overflow-auto space-y-3 bg-gray-50">
-            {loading && <div className="text-sm text-gray-500">Loading…</div>}
+            {loading && <div className="text-xs text-gray-400">Loading…</div>}
 
-            {!loading && selectedConversation && messages.length === 0 && (
+            {selectedConversation && messages.length === 0 && !loading && (
               <div className="text-sm text-gray-500">No messages yet.</div>
             )}
 
-            {!loading && messages.map((m) => {
+            {messages
+              .filter((m) => !selectedConversation || m.conversation_id === selectedConversation.id)
+              .map((m) => {
               const isOutbound = m.direction === 'outbound';
               return (
                 <div

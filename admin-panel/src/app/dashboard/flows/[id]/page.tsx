@@ -265,10 +265,8 @@ export default function FlowEditPage() {
         await setFlowStartNode(versionId, version.start_node_key);
       }
 
-      // Reload so we have the latest ids
-      await loadVersion(versionId);
-
-      // Save all options (for saved nodes)
+      // Do NOT reload the page state here.
+      // We only need the latest node ids from the server, without wiping unsaved UI edits.
       const currentNodes = await getFlowVersion(flowId, versionId);
       const nodeKeyToId = new Map((currentNodes.nodes || []).map((n: any) => [n.node_key, n.id]));
 
@@ -305,7 +303,7 @@ export default function FlowEditPage() {
       await loadFlow();
       await loadVersion(versionId);
     } catch (e: any) {
-      toast.error(formatFlowError(e));
+      toast.error(formatFlowErrorUi(e));
     } finally {
       setSavingAll(false);
     }

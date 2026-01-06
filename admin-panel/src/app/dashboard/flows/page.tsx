@@ -68,10 +68,23 @@ export default function FlowsPage() {
           <CardTitle>Conversation Flow Builder</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Input placeholder="Flow ID e.g. service-flow" value={slug} onChange={(e) => setSlug(e.target.value)} />
-            <Input placeholder="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <Button onClick={onCreate}>Create</Button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+            <Input
+              placeholder="Flow ID e.g. service-flow"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+            />
+            <Input
+              placeholder="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Button
+              onClick={onCreate}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg"
+            >
+              Create
+            </Button>
           </div>
         
         </CardContent>

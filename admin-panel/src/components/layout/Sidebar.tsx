@@ -25,7 +25,8 @@ const navItems = [
   { name: 'Flows', href: '/dashboard/flows', icon: 'settings' },
 
   // Settings entry (moved above Dashboard)
-  { name: 'Settings', href: '/dashboard/settings', icon: 'settings' },
+  { name: 'Welcome Messages', href: '/dashboard/settings', icon: 'settings' },
+  { name: 'Broadcast', href: '/dashboard/broadcast', icon: 'send' },
 
   // Main dashboard and task items
   { name: 'Dashboard', href: '/dashboard', icon: 'grid' },
