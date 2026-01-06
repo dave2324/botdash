@@ -1093,7 +1093,22 @@ class TelegramBot {
                 }
               }
             } catch (e) {
-              logger.warn('Could not send welcome block', { type }, e);
+              // Some logger configurations hide meta/error. Print a plain error for debugging.
+              console.error(
+                `[welcome_blocks] failed type=${type} chatId=${msg?.chat?.id} userId=${sender?.id} payload=${JSON.stringify(payload)}`
+              );
+              console.error(e);
+
+              logger.warn(
+                'Could not send welcome block',
+                {
+                  type,
+                  payload,
+                  chatId: msg?.chat?.id,
+                  userId: sender?.id,
+                },
+                e
+              );
             }
           }
         } else {

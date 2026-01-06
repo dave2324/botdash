@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { bulkUpdateSettings, createFlow, getFlows, getSettings } from '@/lib/api';
+import { bulkUpdateSettings, createFlow, deleteFlow, getFlows, getSettings } from '@/lib/api';
 
 export default function FlowsPage() {
   const [flows, setFlows] = useState<any[]>([]);
@@ -91,7 +91,6 @@ export default function FlowsPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Flow ID</TableHead>
                   <TableHead>Title</TableHead>
-                  <TableHead>Published</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -101,7 +100,6 @@ export default function FlowsPage() {
                     <TableCell>{f.id}</TableCell>
                     <TableCell className="font-mono">{f.slug}</TableCell>
                     <TableCell>{f.title}</TableCell>
-                    <TableCell>{f.published?.version ? `v${f.published.version}` : '—'}</TableCell>
                     <TableCell className="text-right space-x-2">
                       {defaultFlowId === f.slug ? (
                         <span className="text-xs px-2 py-1 rounded bg-muted">Default</span>
@@ -113,6 +111,38 @@ export default function FlowsPage() {
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/dashboard/flows/${f.id}`}>Edit</Link>
                       </Button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`Delete flow "${f.slug}"? This will delete all its questions/options.`)) return;
+                          try {
+                            await deleteFlow(f.id);
+                            toast.success('Flow deleted');
+                            await load();
+                          } catch (e: any) {
+                            toast.error(e?.response?.data?.message || e?.message || 'Failed to delete flow');
+                          }
+                        }}
+                        className="ml-2 p-2 h-8 w-8 inline-flex items-center justify-center rounded border border-red-500 text-red-600 hover:bg-red-50"
+                        aria-label="Delete flow"
+                        title="Delete"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6" />
+                          <path d="M14 11v6" />
+                          <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
                     </TableCell>
                   </TableRow>
                 ))}

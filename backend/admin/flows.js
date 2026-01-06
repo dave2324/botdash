@@ -104,6 +104,49 @@ router.post('/', adminAuth, async (req, res) => {
   }
 });
 
+// Delete flow (and all versions/nodes/options). Also clears sessions and default_flow_id if needed.
+router.delete('/:id', adminAuth, async (req, res) => {
+  const id = requireIntParam(req.params.id, 'id', res);
+  if (id === null) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const flowRes = await client.query('SELECT * FROM flows WHERE id=$1', [id]);
+    if (flowRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Not found' });
+    }
+    const flow = flowRes.rows[0];
+
+    // Clear default_flow_id if it points to this flow slug
+    try {
+      await client.query(
+        `UPDATE settings SET value = '' WHERE key = 'default_flow_id' AND value = $1`,
+        [flow.slug]
+      );
+    } catch {}
+
+    // Remove any sessions for this flow (flow_id stores slug)
+    try {
+      await client.query('DELETE FROM flow_sessions WHERE flow_id = $1', [flow.slug]);
+    } catch {}
+
+    // Delete flow (should cascade to versions/nodes/options if FK is set)
+    await client.query('DELETE FROM flows WHERE id=$1', [id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Deleted', id });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting flow', e);
+    res.status(500).json({ message: 'Failed to delete flow' });
+  } finally {
+    client.release();
+  }
+});
+
 // Get flow with versions
 router.get('/:id', adminAuth, async (req, res) => {
   const id = requireIntParam(req.params.id, 'id', res);

@@ -647,6 +647,11 @@ export const createFlow = async (data: { slug: string; title: string; descriptio
   return response.data;
 };
 
+export const deleteFlow = async (id: number): Promise<any> => {
+  const response = await api.delete(`/admin/flows/${id}`);
+  return response.data;
+};
+
 export const getFlow = async (id: number): Promise<{ flow: any; versions: any[] }> => {
   const response = await api.get(`/admin/flows/${id}`);
   return response.data;
