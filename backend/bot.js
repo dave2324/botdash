@@ -1053,6 +1053,7 @@ class TelegramBot {
         const welcomeMessage = '';
 
         let startedWelcomeFlow = false;
+        let pendingWelcomeFlowSlug = null;
 
         // If welcome blocks exist, send them in order (only for /start)
         if (Array.isArray(welcomeBlocks) && welcomeBlocks.length > 0) {
@@ -1085,11 +1086,10 @@ class TelegramBot {
                   await this.humanSendVideo(msg.chat.id, url, caption ? { caption, parse_mode: 'HTML' } : undefined);
                 }
               } else if (type === 'question_flow') {
+                // Delay flow start until after other welcome blocks are sent.
                 const slug = String(payload.slug || '').trim();
                 if (slug && this.flow) {
-                  await this.flow.startFlow({ chatId: msg.chat.id, userId: sender.id, slug, lang: userLang });
-                  startedWelcomeFlow = true;
-                  break; // stop sending more blocks; flow becomes interactive
+                  pendingWelcomeFlowSlug = slug;
                 }
               }
             } catch (e) {
@@ -1109,6 +1109,22 @@ class TelegramBot {
                 },
                 e
               );
+            }
+          }
+
+          // Start flow after sending all other welcome blocks
+          if (pendingWelcomeFlowSlug && this.flow) {
+            try {
+              await this.flow.startFlow({
+                chatId: msg.chat.id,
+                userId: sender.id,
+                slug: pendingWelcomeFlowSlug,
+                lang: userLang,
+              });
+              startedWelcomeFlow = true;
+            } catch (e) {
+              console.error(`[welcome_blocks] failed to start flow slug=${pendingWelcomeFlowSlug}`);
+              console.error(e);
             }
           }
         } else {
