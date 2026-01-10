@@ -652,6 +652,78 @@ export const deleteFlow = async (id: number): Promise<any> => {
   return response.data;
 };
 
+// --- Group/Channel Moderation ---
+export type ModerationSetting = {
+  chat_id: number;
+  chat_type: string;
+  enabled: boolean;
+  welcome_enabled: boolean;
+  welcome_text: string | null;
+  delete_links_enabled: boolean;
+  auto_mute_enabled: boolean;
+  auto_mute_seconds: number;
+};
+
+export const getModerationSettings = async (): Promise<{ settings: ModerationSetting[] }> => {
+  const response = await api.get('/admin/moderation/settings');
+  return response.data;
+};
+
+export type BotChat = {
+  chat_id: number;
+  chat_type: string;
+  title: string | null;
+  username: string | null;
+  last_seen_at: string;
+};
+
+export const getBotChats = async (): Promise<{ chats: BotChat[] }> => {
+  const response = await api.get('/admin/moderation/chats');
+  return response.data;
+};
+
+export const getGlobalModeration = async () => {
+  const response = await api.get('/admin/moderation/global');
+  return response.data;
+};
+
+export const saveGlobalModeration = async (config: any) => {
+  const response = await api.put('/admin/moderation/global', config);
+  return response.data;
+};
+
+export const upsertModerationSetting = async (chatId: number, setting: Partial<ModerationSetting>) => {
+  const response = await api.put(`/admin/moderation/settings/${chatId}`, setting);
+  return response.data;
+};
+
+export type ScheduledPost = {
+  id: number;
+  chat_id: number;
+  chat_type: string;
+  content_type: string;
+  text: string | null;
+  media_url: string | null;
+  send_at: string;
+  status: string;
+  error: string | null;
+};
+
+export const getScheduledPosts = async (): Promise<{ posts: ScheduledPost[] }> => {
+  const response = await api.get('/admin/moderation/scheduled-posts');
+  return response.data;
+};
+
+export const createScheduledPost = async (data: Partial<ScheduledPost>) => {
+  const response = await api.post('/admin/moderation/scheduled-posts', data);
+  return response.data;
+};
+
+export const deleteScheduledPost = async (id: number) => {
+  const response = await api.delete(`/admin/moderation/scheduled-posts/${id}`);
+  return response.data;
+};
+
 export const getFlow = async (id: number): Promise<{ flow: any; versions: any[] }> => {
   const response = await api.get(`/admin/flows/${id}`);
   return response.data;

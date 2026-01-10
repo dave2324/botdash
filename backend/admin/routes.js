@@ -79,6 +79,7 @@ const activityLogsModule = require('./activity-logs');
 const adminUsersRouter = require('./admin-users');
 const userRequestsRouter = require('./user-requests');
 const inboxRouter = require('./inbox');
+const moderationRouter = require('./moderation');
 
 // Use sub-routers
 router.use('/affiliate-tasks', affiliateTasksRouter);
@@ -88,6 +89,7 @@ router.use('/flows', flowsRouter);
 router.use('/staff', adminUsersRouter); // Admin users management
 router.use('/user-requests', userRequestsRouter); // Admin inbox for user requests
 router.use('/inbox', inboxRouter); // Full conversation inbox
+router.use('/moderation', moderationRouter); // Group/Channel management
 router.use('/', activityLogsModule.router); // Activity logs routes
 
 // Helper: send message/photo/video to a single user

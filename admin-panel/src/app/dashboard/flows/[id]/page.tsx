@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import {
@@ -416,73 +415,35 @@ export default function FlowEditPage() {
             </Button>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Question ID</TableHead>
-                <TableHead>Question Type</TableHead>
-                <TableHead>Question text (English)</TableHead>
-                <TableHead>Go to Question ID (Next)</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nodes
-                .slice()
-                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                .map((n) => {
-                const isChoice = n.type === 'single_choice' || n.type === 'multi_choice';
-                const optList = n.id
-                  ? (optionsByNodeId.get(n.id) || [])
-                  : options.filter((o) => o.node_key === n.node_key);
-                const nKey = n.id ? `id-${n.id}` : `tmp-${n.__tempKey || n.node_key}`;
-                const isCollapsed = collapsedOptions[n.node_key] !== false; // default collapsed
+          <div className="space-y-4">
+            {nodes
+              .slice()
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map((n, idx) => {
+              const isChoice = n.type === 'single_choice' || n.type === 'multi_choice';
+              const optList = n.id
+                ? (optionsByNodeId.get(n.id) || [])
+                : options.filter((o) => o.node_key === n.node_key);
+              const nKey = n.id ? `id-${n.id}` : `tmp-${n.__tempKey || n.node_key}`;
+              const isCollapsed = collapsedOptions[n.node_key] !== false; // default collapsed
 
-                return (
-                  <Fragment key={nKey}>
-                    <TableRow>
-                      <TableCell className="font-mono">
-                        {!n.id ? (
-                          <Input
-                            value={n.node_key}
-                            onChange={(e) => {
-                              const nextKey = e.target.value;
-                              setNodes(nodes.map((x) => (x === n ? { ...x, node_key: nextKey } : x)));
-                            }}
-                            placeholder="Question ID"
-                          />
-                        ) : (
-                          n.node_key
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Select value={n.type} onValueChange={(v) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, type: v } : x))}>
-                          <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {NODE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Textarea
-                          value={n.prompt_i18n?.en || ''}
-                          onChange={(e) =>
-                            setNodes(
-                              nodes.map((x) =>
-                                x.node_key === n.node_key
-                                  ? { ...x, prompt_i18n: { ...(x.prompt_i18n || {}), en: e.target.value } }
-                                  : x
-                              )
-                            )
-                          }
-                          className="min-w-[260px]"
-                          rows={2}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input value={n.next_node_key || ''} onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))} />
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
+              return (
+                <Card key={nKey} className="overflow-hidden border border-gray-200 shadow-sm">
+                  <CardHeader className="py-4 bg-gradient-to-b from-gray-50 to-white">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">Question {idx + 1}</div>
+                        <div className="mt-1 flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs px-2 py-1 rounded bg-muted">
+                            {n.node_key}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded border bg-blue-50 text-blue-700 border-blue-100">
+                            {n.type}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
                         {isChoice && (
                           <Button
                             size="sm"
@@ -493,16 +454,18 @@ export default function FlowEditPage() {
                                 [n.node_key]: !(prev[n.node_key] !== false),
                               }))
                             }
+                            className="rounded-lg"
                           >
                             {isCollapsed ? 'Expand' : 'Collapse'}
                           </Button>
                         )}
+
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => onDeleteNode(n.node_key)}
                           aria-label="Delete question"
-                          className="p-2 h-8 w-8 inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
+                          className="p-2 h-8 w-8 rounded-lg inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
                         >
                           <svg
                             className="w-4 h-4 text-red-500"
@@ -520,140 +483,187 @@ export default function FlowEditPage() {
                             <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
                           </svg>
                         </Button>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                    </div>
+                  </CardHeader>
 
-                    {isChoice && (
-                      <TableRow>
-                        <TableCell colSpan={6}>
-                          {isCollapsed ? null : (
-                            <div className="border rounded p-3 bg-white max-w-3xl mx-auto">
-                              <div className="flex items-center justify-between mb-2">
-                                <div>
-                                  <div className="font-semibold">Options for: {n.node_key}</div>
-                                  <div className="text-xs text-muted-foreground">Shown under this question. Telegram buttons will be shown in one row.</div>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Question ID</Label>
+                        {!n.id ? (
+                          <Input
+                            value={n.node_key}
+                            onChange={(e) => {
+                              const nextKey = e.target.value;
+                              setNodes(nodes.map((x) => (x === n ? { ...x, node_key: nextKey } : x)));
+                            }}
+                            placeholder="Question ID"
+                            className="font-mono"
+                          />
+                        ) : (
+                          <Input value={n.node_key} disabled className="font-mono bg-muted/30" />
+                        )}
+                      </div>
+
+                      <div>
+                        <Label>Question Type</Label>
+                        <Select value={n.type} onValueChange={(v) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, type: v } : x))}>
+                          <SelectTrigger className="w-full rounded-lg"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {NODE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Question text (English)</Label>
+                      <Textarea
+                        value={n.prompt_i18n?.en || ''}
+                        onChange={(e) =>
+                          setNodes(
+                            nodes.map((x) =>
+                              x.node_key === n.node_key
+                                ? { ...x, prompt_i18n: { ...(x.prompt_i18n || {}), en: e.target.value } }
+                                : x
+                            )
+                          )
+                        }
+                        className="min-h-[88px] rounded-lg"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Go to Question ID (Next)</Label>
+                      <Input
+                        value={n.next_node_key || ''}
+                        onChange={(e) => setNodes(nodes.map(x => x.node_key===n.node_key ? { ...x, next_node_key: e.target.value || null } : x))}
+                        className="rounded-lg"
+                      />
+                    </div>
+
+                    {isChoice && !isCollapsed && (
+                      <div className="border rounded-xl p-4 bg-white">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <div className="font-semibold">Options for: {n.node_key}</div>
+                            <div className="text-xs text-muted-foreground">Shown under this question. Telegram buttons will be shown in one row.</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const existingKeys = new Set((optList || []).map((x: any) => String(x.option_key)));
+                                let i = (optList || []).length + 1;
+                                let key = `opt_${i}`;
+                                while (existingKeys.has(key)) {
+                                  i += 1;
+                                  key = `opt_${i}`;
+                                }
+
+                                setOptions([
+                                  ...options,
+                                  {
+                                    flow_node_id: n.id || null,
+                                    node_key: n.node_key,
+                                    option_key: key,
+                                    label_i18n: { en: '' },
+                                    next_node_key: null,
+                                    sort_order: (optList || []).length
+                                  }
+                                ]);
+                              }}
+                              className="rounded-lg"
+                            >
+                              + Add Option
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(optList || [])
+                            .slice()
+                            .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                            .map((o: any) => (
+                              <div key={o.option_key} className="rounded-xl border bg-gray-50/70 p-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+                                  <div className="md:col-span-2">
+                                    <Label className="text-xs">Button text (English)</Label>
+                                    <Input
+                                      className="w-full bg-white dark:bg-neutral-950 rounded-lg"
+                                      value={o.label_i18n?.en || ''}
+                                      onChange={(e) =>
+                                        setOptions(
+                                          options.map((x) =>
+                                            (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
+                                              ? { ...x, label_i18n: { ...(x.label_i18n || {}), en: e.target.value } }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Go to Question ID (Next)</Label>
+                                    <Input
+                                      className="w-full bg-white dark:bg-neutral-950 rounded-lg"
+                                      value={o.next_node_key || ''}
+                                      onChange={(e) =>
+                                        setOptions(
+                                          options.map((x) =>
+                                            (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
+                                              ? { ...x, next_node_key: e.target.value || null }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </div>
                                 </div>
-                                <div className="flex gap-2">
+
+                                <div className="flex justify-end mt-2">
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => {
-                                      const existingKeys = new Set((optList || []).map((x: any) => String(x.option_key)));
-                                      let i = (optList || []).length + 1;
-                                      let key = `opt_${i}`;
-                                      while (existingKeys.has(key)) {
-                                        i += 1;
-                                        key = `opt_${i}`;
+                                      if (!n.id) {
+                                        setOptions((prev) => prev.filter((x) => !(x.node_key === n.node_key && x.option_key === o.option_key)));
+                                        return;
                                       }
-
-                                      setOptions([
-                                        ...options,
-                                        {
-                                          // allow options before the question is saved:
-                                          // link by node_key for now, and flow_node_id will be filled during Save Flow.
-                                          flow_node_id: n.id || null,
-                                          node_key: n.node_key,
-                                          option_key: key,
-                                          label_i18n: { en: '' },
-                                          next_node_key: null,
-                                          sort_order: (optList || []).length
-                                        }
-                                      ]);
+                                      onDeleteOption(n.id, o.option_key);
                                     }}
+                                    aria-label="Delete option"
+                                    className="p-2 h-8 w-8 rounded-lg inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
                                   >
-                                    + Add Option
+                                    <svg
+                                      className="w-4 h-4 text-red-500"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <circle cx="12" cy="12" r="9" />
+                                      <line x1="9" y1="9" x2="15" y2="15" />
+                                      <line x1="15" y1="9" x2="9" y2="15" />
+                                    </svg>
                                   </Button>
                                 </div>
                               </div>
-
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Button text (English)</TableHead>
-                                    <TableHead>Go to Question ID (Next)</TableHead>
-                                    <TableHead className="w-[220px]"></TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {(optList || [])
-                                    .slice()
-                                    .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                                    .map((o: any) => (
-                                      <TableRow key={o.option_key}>
-                                        <TableCell>
-                                          <Input
-                                            className="w-[220px] bg-white dark:bg-neutral-950"
-                                            value={o.label_i18n?.en || ''}
-                                            onChange={(e) =>
-                                              setOptions(
-                                                options.map((x) =>
-                                                  (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
-                                                    ? { ...x, label_i18n: { ...(x.label_i18n || {}), en: e.target.value } }
-                                                    : x
-                                                )
-                                              )
-                                            }
-                                          />
-                                        </TableCell>
-                                        <TableCell>
-                                          <Input
-                                            className="w-[180px] bg-white dark:bg-neutral-950"
-                                            value={o.next_node_key || ''}
-                                            onChange={(e) =>
-                                              setOptions(
-                                                options.map((x) =>
-                                                  (((n.id && x.flow_node_id === n.id) || (!n.id && x.node_key === n.node_key)) && x.option_key === o.option_key)
-                                                    ? { ...x, next_node_key: e.target.value || null }
-                                                    : x
-                                                )
-                                              )
-                                            }
-                                          />
-                                        </TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => {
-                                              if (!n.id) {
-                                                // Unsaved question: remove locally
-                                                setOptions((prev) => prev.filter((x) => !(x.node_key === n.node_key && x.option_key === o.option_key)));
-                                                return;
-                                              }
-                                              onDeleteOption(n.id, o.option_key);
-                                            }}
-                                            aria-label="Delete option"
-                                            className="p-2 h-8 w-8 inline-flex items-center justify-center border-red-500 text-red-500 hover:bg-red-50 cursor-pointer"
-                                          >
-                                            <svg
-                                              className="w-4 h-4 text-red-500"
-                                              viewBox="0 0 24 24"
-                                              fill="none"
-                                              stroke="currentColor"
-                                              strokeWidth="2"
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                            >
-                                              <circle cx="12" cy="12" r="9" />
-                                              <line x1="9" y1="9" x2="15" y2="15" />
-                                              <line x1="15" y1="9" x2="9" y2="15" />
-                                            </svg>
-                                          </Button>
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                            ))}
+                        </div>
+                      </div>
                     )}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
 

@@ -91,6 +91,9 @@ class TelegramBot {
 
       // Register message handlers
       this.registerHandlers();
+
+      // Start group/channel management (welcome, delete links, mute) and scheduled posts
+      this.startGroupChannelManagement();
     } catch (error) {
       logger.error('Error starting bot:', error);
       throw error;
@@ -120,6 +123,139 @@ class TelegramBot {
         this.start();
       }
     }, 30000);
+  }
+
+  // Group/Channel management (welcome new members, delete any link, auto-mute) + scheduled posts
+  startGroupChannelManagement() {
+    const pool = require('./config/database');
+
+    // Welcome + delete links
+    this.bot.on('message', async (msg) => {
+      try {
+        if (!msg?.chat?.id) return;
+        const chatId = msg.chat.id;
+        const chatType = msg.chat.type;
+
+        if (!['group', 'supergroup', 'channel'].includes(chatType)) return;
+
+        // Register chat so admin can see chat_id in the dashboard
+        try {
+          await pool.query(
+            `INSERT INTO bot_chats (chat_id, chat_type, title, username, last_seen_at, updated_at)
+             VALUES ($1,$2,$3,$4,NOW(),NOW())
+             ON CONFLICT (chat_id) DO UPDATE SET
+               chat_type=EXCLUDED.chat_type,
+               title=EXCLUDED.title,
+               username=EXCLUDED.username,
+               last_seen_at=NOW(),
+               updated_at=NOW()`,
+            [chatId, chatType, msg.chat.title || null, msg.chat.username || null]
+          );
+        } catch {}
+
+        // Load GLOBAL moderation settings (applies to all groups/channels)
+        let settings;
+        try {
+          const keys = [
+            'moderation_enabled',
+            'moderation_welcome_enabled',
+            'moderation_welcome_text',
+            'moderation_delete_links_enabled',
+            'moderation_auto_mute_enabled',
+            'moderation_auto_mute_seconds'
+          ];
+          const s = await pool.query(
+            `SELECT key, value FROM settings WHERE key = ANY($1::text[])`,
+            [keys]
+          );
+          const map = new Map(s.rows.map((r) => [r.key, String(r.value)]));
+          settings = {
+            enabled: map.get('moderation_enabled') !== 'false',
+            welcome_enabled: map.get('moderation_welcome_enabled') === 'true',
+            welcome_text: map.get('moderation_welcome_text') || '',
+            delete_links_enabled: map.get('moderation_delete_links_enabled') === 'true',
+            auto_mute_enabled: map.get('moderation_auto_mute_enabled') === 'true',
+            auto_mute_seconds: Number(map.get('moderation_auto_mute_seconds') || 3600),
+          };
+        } catch {
+          return;
+        }
+
+        if (!settings || settings.enabled === false) return;
+
+        // Welcome new members (send in group)
+        if (settings.welcome_enabled && Array.isArray(msg.new_chat_members) && msg.new_chat_members.length > 0) {
+          const text = String(settings.welcome_text || '').trim();
+          if (text) {
+            await this.bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+          }
+        }
+
+        // Delete any link
+        if (settings.delete_links_enabled) {
+          const hasLinkEntity = Array.isArray(msg.entities)
+            ? msg.entities.some((e) => e.type === 'url' || e.type === 'text_link')
+            : false;
+          const textHasHttp = typeof msg.text === 'string' && /https?:\/\//i.test(msg.text);
+          const captionHasHttp = typeof msg.caption === 'string' && /https?:\/\//i.test(msg.caption);
+          const containsLink = hasLinkEntity || textHasHttp || captionHasHttp;
+
+          if (containsLink && msg.message_id && msg.from) {
+            try {
+              await this.bot.deleteMessage(chatId, msg.message_id);
+            } catch {}
+
+            if (settings.auto_mute_enabled) {
+              const seconds = Number(settings.auto_mute_seconds) || 3600;
+              try {
+                const untilDate = Math.floor(Date.now() / 1000) + seconds;
+                await this.bot.restrictChatMember(chatId, msg.from.id, {
+                  permissions: {
+                    can_send_messages: false,
+                    can_send_media_messages: false,
+                    can_send_polls: false,
+                    can_send_other_messages: false,
+                    can_add_web_page_previews: false,
+                    can_change_info: false,
+                    can_invite_users: false,
+                    can_pin_messages: false
+                  },
+                  until_date: untilDate
+                });
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+    });
+
+    // Scheduler: send due scheduled posts
+    setInterval(async () => {
+      try {
+        const due = await pool.query(
+          `SELECT * FROM scheduled_posts
+           WHERE status='pending' AND send_at <= NOW()
+           ORDER BY send_at ASC
+           LIMIT 20`
+        );
+
+        for (const job of due.rows) {
+          try {
+            if (job.content_type === 'photo' && job.media_url) {
+              await this.bot.sendPhoto(job.chat_id, job.media_url, job.text ? { caption: job.text, parse_mode: 'HTML' } : undefined);
+            } else if (job.content_type === 'video' && job.media_url) {
+              await this.bot.sendVideo(job.chat_id, job.media_url, job.text ? { caption: job.text, parse_mode: 'HTML' } : undefined);
+            } else {
+              await this.bot.sendMessage(job.chat_id, String(job.text || ''), { parse_mode: 'HTML' });
+            }
+
+            await pool.query('UPDATE scheduled_posts SET status=\'sent\', updated_at=NOW() WHERE id=$1', [job.id]);
+          } catch (e) {
+            await pool.query('UPDATE scheduled_posts SET status=\'failed\', error=$2, updated_at=NOW() WHERE id=$1', [job.id, String(e?.message || e)]);
+          }
+        }
+      } catch {}
+    }, 5000);
   }
 
   // Setup scheduled verification of channel memberships
