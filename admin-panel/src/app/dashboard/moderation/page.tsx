@@ -32,6 +32,7 @@ export default function ModerationPage() {
   const [scheduleType, setScheduleType] = useState<'text' | 'photo' | 'video'>('text');
   const [scheduleText, setScheduleText] = useState('');
   const [scheduleMediaUrl, setScheduleMediaUrl] = useState('');
+  // HTML datetime-local uses: "YYYY-MM-DDTHH:mm" (local time)
   const [scheduleAt, setScheduleAt] = useState('');
 
   const load = async () => {
@@ -149,19 +150,29 @@ export default function ModerationPage() {
             </select>
             <textarea className="px-3 py-2 border rounded" rows={3} value={scheduleText} onChange={(e) => setScheduleText(e.target.value)} placeholder="Text / Caption" />
             <input className="px-3 py-2 border rounded" value={scheduleMediaUrl} onChange={(e) => setScheduleMediaUrl(e.target.value)} placeholder="Media URL (for photo/video)" />
-            <input className="px-3 py-2 border rounded" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} placeholder="Send at (YYYY-MM-DD HH:MM:SS)" />
+            <input
+              type="datetime-local"
+              className="px-3 py-2 border rounded"
+              value={scheduleAt}
+              onChange={(e) => setScheduleAt(e.target.value)}
+            />
 
             <button
               className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
               onClick={async () => {
                 try {
                   if (!scheduleDest) return setMsg({ type: 'error', text: 'Destination chat required' });
-                  if (!scheduleAt) return setMsg({ type: 'error', text: 'send_at required' });
+                  if (!scheduleAt) return setMsg({ type: 'error', text: 'Send time required' });
 
                   const [chatIdRaw, chatTypeRaw] = scheduleDest.split(':');
                   const chatId = Number(chatIdRaw);
                   const chatType = (chatTypeRaw || 'group') as any;
                   if (!chatId) return setMsg({ type: 'error', text: 'Invalid destination chat' });
+
+                  // Convert local datetime-local input into an ISO timestamp for the backend.
+                  const sendAtDate = new Date(scheduleAt);
+                  if (Number.isNaN(sendAtDate.getTime())) return setMsg({ type: 'error', text: 'Invalid send time' });
+                  const sendAtIso = sendAtDate.toISOString();
 
                   await createScheduledPost({
                     chat_id: chatId,
@@ -169,7 +180,7 @@ export default function ModerationPage() {
                     content_type: scheduleType,
                     text: scheduleText,
                     media_url: scheduleMediaUrl || undefined,
-                    send_at: scheduleAt,
+                    send_at: sendAtIso,
                   });
                   setMsg({ type: 'success', text: 'Scheduled' });
                   await load();
