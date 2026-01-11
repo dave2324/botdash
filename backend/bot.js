@@ -153,7 +153,9 @@ class TelegramBot {
           );
         } catch {}
 
-        // Load GLOBAL moderation settings (applies to all groups/channels)
+        // Resolve moderation settings for this chat:
+        // 1) global defaults from settings table
+        // 2) per-chat overrides from chat_moderation_settings (if present)
         let settings;
         try {
           const keys = [
@@ -169,7 +171,8 @@ class TelegramBot {
             [keys]
           );
           const map = new Map(s.rows.map((r) => [r.key, String(r.value)]));
-          settings = {
+
+          const globalSettings = {
             enabled: map.get('moderation_enabled') !== 'false',
             welcome_enabled: map.get('moderation_welcome_enabled') === 'true',
             welcome_text: map.get('moderation_welcome_text') || '',
@@ -177,6 +180,24 @@ class TelegramBot {
             auto_mute_enabled: map.get('moderation_auto_mute_enabled') === 'true',
             auto_mute_seconds: Number(map.get('moderation_auto_mute_seconds') || 3600),
           };
+
+          // Per-chat override (if any)
+          const c = await pool.query(
+            'SELECT * FROM chat_moderation_settings WHERE chat_id=$1 LIMIT 1',
+            [chatId]
+          );
+          const row = c.rows?.[0];
+
+          settings = row
+            ? {
+                enabled: row.enabled !== false,
+                welcome_enabled: !!row.welcome_enabled,
+                welcome_text: row.welcome_text || '',
+                delete_links_enabled: !!row.delete_links_enabled,
+                auto_mute_enabled: !!row.auto_mute_enabled,
+                auto_mute_seconds: Number(row.auto_mute_seconds || 3600),
+              }
+            : globalSettings;
         } catch {
           return;
         }
@@ -240,7 +261,10 @@ class TelegramBot {
             } catch {}
 
             if (settings.auto_mute_enabled) {
-              const seconds = Number(settings.auto_mute_seconds) || 3600;
+              // Telegram may ignore/round very small until_date values.
+              // Enforce a minimum so the mute reliably expires.
+              const secondsRaw = Number(settings.auto_mute_seconds) || 3600;
+              const seconds = Math.max(30, secondsRaw);
               try {
                 const untilDate = Math.floor(Date.now() / 1000) + seconds;
                 await this.bot.restrictChatMember(chatId, msg.from.id, {

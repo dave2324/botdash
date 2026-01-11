@@ -28,7 +28,11 @@ export default function ModerationPage() {
   const [welcomeText, setWelcomeText] = useState('');
   const [deleteLinks, setDeleteLinks] = useState(true);
   const [autoMute, setAutoMute] = useState(false);
+
+  // Store auto-mute duration as seconds for backend, but edit as value + unit in UI.
   const [autoMuteSeconds, setAutoMuteSeconds] = useState(3600);
+  const [autoMuteDurationValue, setAutoMuteDurationValue] = useState('60');
+  const [autoMuteDurationUnit, setAutoMuteDurationUnit] = useState<'seconds' | 'minutes' | 'hours'>('minutes');
 
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
 
@@ -45,6 +49,29 @@ export default function ModerationPage() {
   // HTML datetime-local uses: "YYYY-MM-DDTHH:mm" (local time)
   const [scheduleAt, setScheduleAt] = useState('');
 
+  const secondsToUi = (secs: number) => {
+    const s = Number(secs || 0);
+    if (!s || s < 60) return { value: s || 0, unit: 'seconds' as const };
+    if (s % 3600 === 0) return { value: s / 3600, unit: 'hours' as const };
+    if (s % 60 === 0) return { value: s / 60, unit: 'minutes' as const };
+    return { value: s, unit: 'seconds' as const };
+  };
+
+  const parseNonNegativeInt = (raw: string) => {
+    // Allow empty while editing.
+    if (raw.trim() === '') return 0;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
+  };
+
+  const uiToSeconds = (value: string, unit: 'seconds' | 'minutes' | 'hours') => {
+    const v = parseNonNegativeInt(value);
+    if (unit === 'hours') return v * 3600;
+    if (unit === 'minutes') return v * 60;
+    return v;
+  };
+
   const load = async () => {
     setLoading(true);
     try {
@@ -57,7 +84,13 @@ export default function ModerationPage() {
       setWelcomeText(String(c.welcome_text || ''));
       setDeleteLinks(!!c.delete_links_enabled);
       setAutoMute(!!c.auto_mute_enabled);
-      setAutoMuteSeconds(Number(c.auto_mute_seconds || 3600));
+      {
+        const secs = Number(c.auto_mute_seconds || 3600);
+        setAutoMuteSeconds(secs);
+        const ui = secondsToUi(secs);
+        setAutoMuteDurationValue(String(ui.value));
+        setAutoMuteDurationUnit(ui.unit);
+      }
 
       const [p, chats, perChat] = await Promise.all([getScheduledPosts(), getBotChats(), getModerationSettings()]);
       setPosts(p.posts || []);
@@ -101,7 +134,13 @@ export default function ModerationPage() {
     setWelcomeText(String(s.welcome_text || ''));
     setDeleteLinks(!!s.delete_links_enabled);
     setAutoMute(!!s.auto_mute_enabled);
-    setAutoMuteSeconds(Number(s.auto_mute_seconds || 3600));
+    {
+      const secs = Number(s.auto_mute_seconds || 3600);
+      setAutoMuteSeconds(secs);
+      const ui = secondsToUi(secs);
+      setAutoMuteDurationValue(String(ui.value));
+      setAutoMuteDurationUnit(ui.unit);
+    }
   }, [modChatDest, modSettingsMap]);
 
   return (
@@ -152,7 +191,38 @@ export default function ModerationPage() {
               <input type="checkbox" checked={autoMute} onChange={(e) => setAutoMute(e.target.checked)} />
               Auto-mute user who posts link
             </label>
-            <input className="px-3 py-2 border rounded" type="number" value={autoMuteSeconds} onChange={(e) => setAutoMuteSeconds(Number(e.target.value))} placeholder="Mute seconds" />
+            <div className="grid gap-1">
+              <div className="flex gap-2">
+                <input
+                  className="px-3 py-2 border rounded w-40"
+                  type="number"
+                  min={0}
+                  value={autoMuteDurationValue}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Remove leading zeros like 01 -> 1 (but keep single 0)
+                    const normalized = raw.replace(/^0+(?=\d)/, '');
+                    setAutoMuteDurationValue(normalized);
+                    setAutoMuteSeconds(uiToSeconds(normalized, autoMuteDurationUnit));
+                  }}
+                  placeholder="Duration"
+                />
+                <select
+                  className="px-3 py-2 border rounded"
+                  value={autoMuteDurationUnit}
+                  onChange={(e) => {
+                    const u = e.target.value as any;
+                    setAutoMuteDurationUnit(u);
+                    setAutoMuteSeconds(uiToSeconds(autoMuteDurationValue, u));
+                  }}
+                >
+                  <option value="seconds">seconds</option>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                </select>
+              </div>
+              <div className="text-xs text-gray-500">Minimum auto-mute is 30 seconds (smaller values may not expire on Telegram).</div>
+            </div>
 
             <button
               className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
@@ -165,6 +235,9 @@ export default function ModerationPage() {
                   const chatType = (chatTypeRaw || 'group') as any;
                   if (!chatId) return setMsg({ type: 'error', text: 'Invalid destination chat' });
 
+                  const seconds = uiToSeconds(autoMuteDurationValue, autoMuteDurationUnit);
+                  const clampedSeconds = autoMute ? Math.max(30, seconds) : seconds;
+
                   const r = await upsertModerationSetting(chatId, {
                     chat_type: chatType,
                     enabled,
@@ -172,8 +245,16 @@ export default function ModerationPage() {
                     welcome_text: welcomeText,
                     delete_links_enabled: deleteLinks,
                     auto_mute_enabled: autoMute,
-                    auto_mute_seconds: autoMuteSeconds,
+                    auto_mute_seconds: clampedSeconds,
                   });
+
+                  // Keep UI consistent with what was saved
+                  if (autoMute && clampedSeconds !== seconds) {
+                    const ui = secondsToUi(clampedSeconds);
+                    setAutoMuteDurationValue(String(ui.value));
+                    setAutoMuteDurationUnit(ui.unit);
+                    setAutoMuteSeconds(clampedSeconds);
+                  }
 
                   setModSettingsMap((prev) => ({ ...prev, [chatId]: r.setting }));
                   setMsg({ type: 'success', text: 'Saved for selected chat' });
