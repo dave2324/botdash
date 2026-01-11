@@ -1,6 +1,20 @@
 # Group & Channel Management Guide
-This guide explains how to use the "Group / Channel Management" features in  Admin panel
-## 1. Prerequisites (Setup)
+This guide explains how to use the "Group / Channel Management" features in your Admin Dashboard (`/dashboard/moderation`).
+
+## 1. Bot Configuration (Important First Step)
+
+**Before adding the bot to any group**, you must ensure it can read messages. By default, bots cannot see messages in groups.
+
+1.  Open **[@BotFather](https://t.me/BotFather)** in Telegram.
+2.  Send the command `/mybots`.
+3.  Select your bot from the list.
+4.  Click on **Bot Settings**.
+5.  Click on **Group Privacy**.
+6.  Click **Turn off**.
+    *   It should say: *"Group Privacy is now DISABLED."*
+7.  *Now* you are ready to add the bot to groups.
+
+## 2. Setting up a Group
 
 Before the bot can manage your group or channel, you must:
 
@@ -13,7 +27,9 @@ Before the bot can manage your group or channel, you must:
 3.  **Active Message**: Send at least one message in the group *after* adding the bot.
     *   *Why?* The bot needs to receive an event to "see" and register the group in its database. Once registered, it will appear in the dropdown menu on the dashboard.
 
-## 2. Configuring Moderation
+    *   *Why?* The bot needs to receive an event to "see" and register the group in its database. Once registered, it will appear in the dropdown menu on the dashboard.
+
+## 3. Configuring Moderation
 
 Go to the **Moderation** tab in your Admin Panel.
 
@@ -37,7 +53,7 @@ Go to the **Moderation** tab in your Admin Panel.
     *   **Mute Seconds**: Set the duration (default is 3600 seconds = 1 hour).
 6.  **Save**: Click the **Save** button to apply changes.
 
-## 3. Scheduled Posts
+## 4. Scheduled Posts
 
 You can schedule messages to be sent largely in the future.
 
