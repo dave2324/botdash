@@ -194,21 +194,6 @@ export default function SettingsPage() {
             </button>
           </li>
 
-          <li className="mr-2">
-            <button 
-              onClick={() => setActiveTab('languages')}
-              className={`inline-block p-4 border-b-2 ${
-                activeTab === 'languages' 
-                  ? 'text-blue-600 border-blue-600' 
-                  : 'text-gray-500 border-transparent hover:text-gray-700'
-              } rounded-t-lg`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Languages</span>
-              </div>
-            </button>
-          </li>
-
         </ul>
       </div>
 
@@ -466,32 +451,6 @@ export default function SettingsPage() {
             </div>
 
       
-          </div>
-        </div>
-      )}
-
-      {/* Languages Tab */}
-      {activeTab === 'languages' && (
-        <div className="grid gap-4">
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-sm font-medium text-gray-900">Supported Languages (JSON)</h3>
-            <textarea
-              value={supportedLanguages}
-              onChange={(e) => setSupportedLanguages(e.target.value)}
-              rows={6}
-              className="w-full mt-3 px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm"
-            />
-            <div className="mt-3">
-              <label className="text-sm font-medium text-gray-900">Default Language</label>
-              <input
-                type="text"
-                value={defaultLanguage}
-                onChange={(e) => setDefaultLanguage(e.target.value)}
-                className="w-full mt-2 px-3 py-2 rounded-lg border border-gray-300 text-sm"
-                placeholder="en"
-              />
-            </div>
-            <div className="mt-3 text-xs text-gray-500">Save Changes will persist keys: supported_languages, default_language, welcome_text, welcome_image_url, welcome_video_url.</div>
           </div>
         </div>
       )}
