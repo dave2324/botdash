@@ -186,8 +186,42 @@ class TelegramBot {
         // Welcome new members (send in group)
         if (settings.welcome_enabled && Array.isArray(msg.new_chat_members) && msg.new_chat_members.length > 0) {
           const text = String(settings.welcome_text || '').trim();
+
+          const escapeHtml = (s) =>
+            String(s)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+
+          const buildMention = (u) => {
+            if (!u) return '';
+            if (u.username) return `@${u.username}`;
+            const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || 'New member';
+            return `<a href="tg://user?id=${u.id}">${escapeHtml(fullName)}</a>`;
+          };
+
+          const members = msg.new_chat_members
+            .map(buildMention)
+            .filter(Boolean);
+
+          const membersText = members.join(', ');
+
           if (text) {
-            await this.bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+            // Optional placeholders:
+            // - {new_member}: first joined member
+            // - {new_members}: comma-separated list (useful if multiple joined at once)
+            let out = text;
+            if (out.includes('{new_member}') || out.includes('{new_members}')) {
+              out = out.replaceAll('{new_members}', membersText);
+              out = out.replaceAll('{new_member}', members[0] || membersText);
+            } else if (membersText) {
+              // If no placeholders are used, append the member(s) so the welcome always includes their name.
+              out = `${out}\n\n${membersText}`;
+            }
+
+            await this.bot.sendMessage(chatId, out, { parse_mode: 'HTML' });
           }
         }
 
