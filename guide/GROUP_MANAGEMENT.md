@@ -1,5 +1,5 @@
 # Group & Channel Management Guide
-
+This guide explains how to use the "Group / Channel Management" features in  Admin panel
 ## 1. Prerequisites (Setup)
 
 Before the bot can manage your group or channel, you must:
