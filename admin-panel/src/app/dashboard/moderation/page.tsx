@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import {
   createScheduledPost,
   deleteScheduledPost,
+  getBotChats,
+  BotChat,
   getGlobalModeration,
   saveGlobalModeration,
   getScheduledPosts,
@@ -23,9 +25,10 @@ export default function ModerationPage() {
 
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
 
-  // Schedule form (still needs chat_id to know where to post)
-  const [scheduleChatId, setScheduleChatId] = useState('');
-  const [scheduleChatType, setScheduleChatType] = useState<'group' | 'supergroup' | 'channel'>('group');
+  const [botChats, setBotChats] = useState<BotChat[]>([]);
+
+  // Schedule form (choose destination, no manual chat_id)
+  const [scheduleDest, setScheduleDest] = useState('');
   const [scheduleType, setScheduleType] = useState<'text' | 'photo' | 'video'>('text');
   const [scheduleText, setScheduleText] = useState('');
   const [scheduleMediaUrl, setScheduleMediaUrl] = useState('');
@@ -43,8 +46,9 @@ export default function ModerationPage() {
       setAutoMute(!!c.auto_mute_enabled);
       setAutoMuteSeconds(Number(c.auto_mute_seconds || 3600));
 
-      const p = await getScheduledPosts();
+      const [p, chats] = await Promise.all([getScheduledPosts(), getBotChats()]);
       setPosts(p.posts || []);
+      setBotChats((chats.chats || []).filter((x) => x.chat_type === 'group' || x.chat_type === 'supergroup' || x.chat_type === 'channel'));
     } catch (e: any) {
       setMsg({ type: 'error', text: e?.response?.data?.message || e?.message || 'Failed to load' });
     } finally {
@@ -122,15 +126,21 @@ export default function ModerationPage() {
         </div>
 
         <div className="p-4 rounded-lg bg-white shadow-sm border">
-          <h2 className="font-semibold">Scheduled Posts (still needs chat_id)</h2>
-          <div className="text-xs text-gray-500 mt-1">Scheduling always needs a target chat_id to know where to post.</div>
+          <h2 className="font-semibold">Scheduled Posts</h2>
+          <div className="text-xs text-gray-500 mt-1">Select a destination chat where the bot is admin.</div>
 
           <div className="grid gap-2 mt-3">
-            <input className="px-3 py-2 border rounded" value={scheduleChatId} onChange={(e) => setScheduleChatId(e.target.value)} placeholder="Chat ID" />
-            <select className="px-3 py-2 border rounded" value={scheduleChatType} onChange={(e) => setScheduleChatType(e.target.value as any)}>
-              <option value="group">group</option>
-              <option value="supergroup">supergroup</option>
-              <option value="channel">channel</option>
+            <select className="px-3 py-2 border rounded" value={scheduleDest} onChange={(e) => setScheduleDest(e.target.value)}>
+              <option value="">Select destination…</option>
+              {botChats.map((c) => {
+                const label = c.title || (c.username ? `@${c.username}` : `${c.chat_type} ${c.chat_id}`);
+                const value = `${c.chat_id}:${c.chat_type}`;
+                return (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
             <select className="px-3 py-2 border rounded" value={scheduleType} onChange={(e) => setScheduleType(e.target.value as any)}>
               <option value="text">text</option>
@@ -145,13 +155,17 @@ export default function ModerationPage() {
               className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
               onClick={async () => {
                 try {
-                  const id = Number(scheduleChatId);
-                  if (!id) return setMsg({ type: 'error', text: 'Chat ID required for scheduling' });
+                  if (!scheduleDest) return setMsg({ type: 'error', text: 'Destination chat required' });
                   if (!scheduleAt) return setMsg({ type: 'error', text: 'send_at required' });
 
+                  const [chatIdRaw, chatTypeRaw] = scheduleDest.split(':');
+                  const chatId = Number(chatIdRaw);
+                  const chatType = (chatTypeRaw || 'group') as any;
+                  if (!chatId) return setMsg({ type: 'error', text: 'Invalid destination chat' });
+
                   await createScheduledPost({
-                    chat_id: id,
-                    chat_type: scheduleChatType,
+                    chat_id: chatId,
+                    chat_type: chatType,
                     content_type: scheduleType,
                     text: scheduleText,
                     media_url: scheduleMediaUrl || undefined,
